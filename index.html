@@ -1016,6 +1016,7 @@ body.day-mode .priv-btn-active { color: #fff !important; }
   <div role="tablist" aria-label="Dashboard sections" style="display:contents;">
   <button id="tabbtn-pulse" class="tab active" data-tab="pulse" role="tab" aria-selected="true"  aria-controls="tab-pulse">📊 Shift Pulse <span class="tab-status fresh" id="ts-pulse"></span></button>
   <button id="tabbtn-labor" class="tab" data-tab="labor"      role="tab" aria-selected="false" aria-controls="tab-labor">👷 Labor Board <span class="tab-status idle" id="ts-labor"></span></button>
+  <button id="tabbtn-planner" class="tab" data-tab="planner"  role="tab" aria-selected="false" aria-controls="tab-planner">🗺️ Shift Planner <span class="tab-status idle" id="ts-planner"></span></button>
   <button id="tabbtn-recovery" class="tab" data-tab="recovery"   role="tab" aria-selected="false" aria-controls="tab-recovery">⚡ Recovery <span class="tab-status idle" id="ts-recovery"></span></button>
   <button id="tabbtn-analytics" class="tab" data-tab="analytics"  role="tab" aria-selected="false" aria-controls="tab-analytics">📈 Analytics</button>
   <button id="tabbtn-attainment" class="tab" data-tab="attainment" role="tab" aria-selected="false" aria-controls="tab-attainment">🎯 Attainment <span class="tab-status idle" id="ts-attainment"></span></button>
@@ -1024,6 +1025,7 @@ body.day-mode .priv-btn-active { color: #fff !important; }
   <button id="tabbtn-associates" class="tab" data-tab="associates" role="tab" aria-selected="false" aria-controls="tab-associates">👥 Associates <span class="tab-status idle" id="ts-associates"></span></button>
   <button id="tabbtn-helpme" class="tab" data-tab="helpme"     role="tab" aria-selected="false" aria-controls="tab-helpme">🆘 Help Me <span class="tbadge" id="hm-badge" style="display:none;">0</span></button>
   <button id="tabbtn-safety" class="tab" data-tab="safety"     role="tab" aria-selected="false" aria-controls="tab-safety">🛡️ Safety <span class="tab-status idle" id="ts-safety"></span></button>
+  <button id="tabbtn-import" class="tab" data-tab="import"     role="tab" aria-selected="false" aria-controls="tab-import">📥 Import</button>
   </div>
 </div>
 
@@ -1135,6 +1137,117 @@ body.day-mode .priv-btn-active { color: #fff !important; }
 <!-- ===== LABOR BOARD ===== -->
 <div id="tab-labor" class="panel" role="tabpanel" aria-labelledby="tabbtn-labor" tabindex="-1">
 <div class="dirty-warning" id="dirty-labor">⚠ Unsaved changes on this tab — data will sync when you update a field or switch tabs.</div>
+
+<!-- ═══ QZZ1 LABOR BOARD ═══════════════════════════════════════════════ -->
+
+<!-- TOP BAR: Shift status + scan + auto-assign -->
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div id="lb-shift-pill" style="font-family:var(--mono);font-size:11px;padding:5px 12px;background:var(--s2);border:1px solid var(--border);">
+      <span id="lb-shift-label">No shift active</span>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+      Scanned in: <span id="lb-scanned-count" style="color:var(--amber);font-weight:700;">0</span>
+      &nbsp;·&nbsp; Assigned: <span id="lb-assigned-count" style="color:var(--green);font-weight:700;">0</span>
+      &nbsp;·&nbsp; Unassigned: <span id="lb-unassigned-count" style="color:var(--red);font-weight:700;">0</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn btn-ghost btn-sm" onclick="lbOpenScanIn()">🔍 Scan In Associates</button>
+    <button class="btn btn-ghost btn-sm" id="btn-lb-rotate" onclick="lbRotate()">🔄 Rotation</button>
+    <button class="btn btn-amber" onclick="lbAutoAssign()">⚡ Auto-Assign</button>
+  </div>
+</div>
+
+<!-- SCAN-IN PANEL -->
+<div id="lb-scan-panel" style="display:none;" class="card mb2">
+  <div class="card-title">🔍 Scan In — Start of Shift
+    <button class="btn btn-ghost btn-sm" onclick="lbCloseScanIn()">✕ Close</button>
+  </div>
+  <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">Scan each badge as associates arrive. Profile loads automatically. Hit Auto-Assign when everyone is in.</div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;">
+    <input type="text" id="lb-scan-input" placeholder="Scan badge or type login…"
+      style="flex:1;padding:10px;font-family:var(--mono);font-size:14px;background:var(--s2);border:2px solid var(--amber);color:var(--text);letter-spacing:1px;"
+      autocomplete="off" autocorrect="off" spellcheck="false"
+      oninput="lbScanDebounce(this.value)">
+    <button class="btn btn-ghost btn-sm" onclick="lbClearScanInput()">Clear</button>
+  </div>
+  <div id="lb-scan-result" style="font-family:var(--mono);font-size:11px;min-height:16px;margin-bottom:8px;"></div>
+  <div id="lb-scanned-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;max-height:260px;overflow-y:auto;"></div>
+</div>
+
+<!-- AUTO-ASSIGN RESULT BANNER -->
+<div id="lb-autoassign-banner" style="display:none;" class="alert a-amber mb2"></div>
+
+<!-- HEADCOUNT SUMMARY ROW -->
+<div class="g5 mb2" id="lb-hc-summary">
+  <div class="sc muted"><div class="sl">👷 IB Dock Total</div><div class="sv amber" id="lb-hc-total">0</div><div class="ss">on floor</div></div>
+  <div class="sc muted"><div class="sl">📦 Receiving</div><div class="sv green" id="lb-hc-receiving">0</div><div class="ss">receivers + auditors</div></div>
+  <div class="sc muted"><div class="sl">🚜 EPJ Riders</div><div class="sv blue" id="lb-hc-epj">0</div><div class="ss">transport</div></div>
+  <div class="sc muted"><div class="sl">🔧 Problem Solve</div><div class="sv amber" id="lb-hc-ps">0</div><div class="ss">PS zone + floor</div></div>
+  <div class="sc muted"><div class="sl">📥 PID / OP</div><div class="sv muted" id="lb-hc-pid">0</div><div class="ss">conveyor + cages</div></div>
+</div>
+
+<!-- LABOR BOARD GRID -->
+<div id="lb-floor-grid" style="display:grid;grid-template-columns:1fr;gap:12px;">
+
+  <!-- DOCK SECTION -->
+  <div class="card" style="border-left:3px solid var(--muted);">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>🚛 Inbound Dock</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">DD 131–166 · FT Unload · Clamp · TDR · ShipClerk</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;" id="lb-dock-slots"></div>
+  </div>
+
+  <!-- PID SECTION -->
+  <div class="card" style="border-left:3px solid var(--purple,#a78bfa);">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>🔄 PID — Conveyor Belt &amp; OP Cages</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">DD 168 · Buf 164–166 · 5+ ASIN pallets</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;" id="lb-pid-slots"></div>
+  </div>
+
+  <!-- PS ZONE -->
+  <div class="card" style="border-left:3px solid var(--red);">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>⚠️ Problem Solve Zone</span>
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);">Buf 161–163 · CW 161–163 · MAP pallets</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;" id="lb-ps-slots"></div>
+  </div>
+
+  <!-- RECEIVING TEAMS — dynamically rendered -->
+  <div id="lb-teams-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:12px;"></div>
+
+</div>
+
+<!-- UNASSIGNED POOL -->
+<div class="card mt2" id="lb-unassigned-card" style="display:none;border-left:3px solid var(--red);">
+  <div class="card-title">⚠ Unassigned Associates</div>
+  <div id="lb-unassigned-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+</div>
+
+<!-- HEADCOUNT TRACKER (bottom — matches Excel format) -->
+<div class="card mt2">
+  <div class="card-title">📊 Headcount Tracker</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:0.1em;margin-bottom:6px;">INBOUND DOCK POSITIONS</div>
+      <div id="lb-hc-left" style="font-family:var(--mono);font-size:11px;display:grid;grid-template-columns:1fr auto;gap:3px 12px;"></div>
+    </div>
+    <div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:0.1em;margin-bottom:6px;">SUPPORT &amp; SPECIAL</div>
+      <div id="lb-hc-right" style="font-family:var(--mono);font-size:11px;display:grid;grid-template-columns:1fr auto;gap:3px 12px;"></div>
+    </div>
+  </div>
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+    <div>TOTAL IB DOCK: <span id="lb-total-ib" style="color:var(--amber);font-weight:700;">0</span></div>
+    <div>LEARNING HC: <span id="lb-total-learn" style="color:var(--blue);font-weight:700;">0</span></div>
+    <div>LABOR SHARE HC: <span id="lb-total-share" style="color:var(--green);font-weight:700;">0</span></div>
+  </div>
+</div>
 
   <!-- Department Requests -->
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
@@ -1628,6 +1741,58 @@ body.day-mode .priv-btn-active { color: #fff !important; }
   </div>
 </div>
 
+<!-- ===== SHIFT PLANNER ===== -->
+<div id="tab-planner" class="panel" role="tabpanel" aria-labelledby="tabbtn-planner" tabindex="-1">
+
+  <!-- Period Banner -->
+  <div class="card mb2" style="border-left:3px solid var(--amber);">
+    <div class="card-title">🕐 Current Shift Period <span id="planner-period-badge" style="font-family:var(--mono);font-size:11px;padding:2px 8px;background:var(--amber-dim);border:1px solid var(--amber);color:var(--amber);margin-left:8px;">—</span></div>
+    <div id="planner-period-detail" style="font-size:11px;color:var(--muted);font-family:var(--mono);">Select shift type in Shift Pulse to see period breakdown.</div>
+    <div style="margin-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;" id="planner-period-grid"></div>
+  </div>
+
+  <!-- Staffing Ratios -->
+  <div class="card mb2">
+    <div class="card-title">⚖️ Cost Targets <span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px;">Update as guardrails change</span></div>
+    <div class="g4">
+      <div class="ig"><label class="il">Receive Target (cartons/hr)</label><input type="number" id="pl-receive-target" value="55" min="1" oninput="renderPlannerCalc()"></div>
+      <div class="ig"><label class="il">Pallet Stow Target (UPH)</label><input type="number" id="pl-pst-target" value="10" min="1" oninput="renderPlannerCalc()"></div>
+      <div class="ig"><label class="il">Case Stow Target (UPH)</label><input type="number" id="pl-cst-target" value="70" min="1" oninput="renderPlannerCalc()"></div>
+      <div class="ig"><label class="il">Stow Ratio (pallets per received)</label><input type="number" id="pl-stow-ratio" value="1.5" step="0.1" min="1" oninput="renderPlannerCalc()"></div>
+    </div>
+  </div>
+
+  <!-- WIP Input -->
+  <div class="card mb2">
+    <div class="card-title">📦 WIP — Work In Progress <span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px;">Enter current pallet counts per buffer zone</span></div>
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:12px;">Each buffer zone corresponds to its same-numbered car wash. EPJ routing automatically selects the nearest available CW.</div>
+    <div id="wip-zone-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;"></div>
+    <button class="btn btn-amber btn-sm" style="margin-top:12px;" onclick="addWIPZone()">+ Add Buffer Zone</button>
+  </div>
+
+  <!-- Staffing Calculator Output -->
+  <div class="card mb2">
+    <div class="card-title">👷 Staffing Calculator</div>
+    <div id="planner-calc-output" style="color:var(--muted);font-size:12px;font-family:var(--mono);padding:8px;">Enter WIP levels above to calculate staffing needs.</div>
+  </div>
+
+  <!-- EPJ Routing Panel -->
+  <div class="card mb2">
+    <div class="card-title">🚜 EPJ Routing — Buffer → Car Wash</div>
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">Optimal CW for each active buffer. Green = direct. Amber = adjacent. Red = long haul (flag for AM).</div>
+    <div id="epj-routing-output" style="color:var(--muted);font-size:12px;font-family:var(--mono);">Add buffer zones above to see routing.</div>
+    <div style="margin-top:12px;">
+      <div class="card-title" style="font-size:11px;">Car Wash Availability</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:8px;">Mark CWs as full or unavailable to update routing.</div>
+      <div id="cw-availability-grid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <div id="planner-alerts"></div>
+
+</div>
+
 <!-- ===== SAFETY ===== -->
 <div id="tab-safety" class="panel" role="tabpanel" aria-labelledby="tabbtn-safety" tabindex="-1">
 <div class="dirty-warning" id="dirty-safety">⚠ Unsaved changes on this tab — data will sync when you update a field or switch tabs.</div>
@@ -1638,6 +1803,135 @@ body.day-mode .priv-btn-active { color: #fff !important; }
     <div class="sc muted"><div class="sl">⚠️ Near Misses (30d)</div><div class="sv amber" id="s-nearmiss">0</div><div class="ss">leading indicator</div></div>
     <div class="sc muted"><div class="sl">🔓 Open Items</div><div class="sv amber" id="s-open">0</div><div class="ss">unresolved</div></div>
     <div class="sc muted"><div class="sl">✅ Checklist</div><div class="sv amber" id="s-checklist-score">0/8</div><div class="ss">shift items complete</div></div>
+  </div>
+
+  <!-- ── NEAR MISS QUICK-FILL ─────────────────────────────────── -->
+  <div class="card mb2" style="border-left:3px solid var(--yellow);">
+    <div class="card-title">⚡ Near Miss Quick-Fill <span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px;">Scan or search associate → auto-fills profile data → generates report paragraph</span></div>
+
+    <!-- Associate Search -->
+    <div class="g2 mb2">
+      <div class="ig">
+        <label class="il">Search Associate (name, login, or badge)</label>
+        <input type="text" id="nm-search" placeholder="Type name, login, or scan badge…" oninput="nmSearchAssociate(this.value)" autocomplete="off">
+        <div id="nm-search-results" style="display:none;position:relative;z-index:10;background:var(--s2);border:1px solid var(--border);margin-top:2px;max-height:160px;overflow-y:auto;"></div>
+      </div>
+      <div class="ig">
+        <label class="il">Selected Associate</label>
+        <div id="nm-selected-display" style="font-family:var(--mono);font-size:12px;padding:8px;background:var(--s3);border:1px solid var(--border);color:var(--muted);">No associate selected</div>
+      </div>
+    </div>
+
+    <!-- Auto-filled profile fields -->
+    <div id="nm-profile-fields" style="display:none;">
+      <div style="font-size:10px;color:var(--amber);font-family:var(--mono);letter-spacing:0.1em;margin-bottom:8px;">AUTO-FILLED FROM PROFILE</div>
+      <div class="g3 mb2">
+        <div class="ig"><label class="il">Hire Date</label><input type="text" id="nm-hire-date" readonly style="background:var(--s3);color:var(--green);"></div>
+        <div class="ig"><label class="il">Tenure</label><input type="text" id="nm-tenure" readonly style="background:var(--s3);color:var(--green);"></div>
+        <div class="ig"><label class="il">Job Level / LC</label><input type="text" id="nm-lc" readonly style="background:var(--s3);color:var(--green);"></div>
+        <div class="ig"><label class="il">Shift Pattern</label><input type="text" id="nm-shift" readonly style="background:var(--s3);color:var(--green);"></div>
+        <div class="ig"><label class="il">Supervisor</label><input type="text" id="nm-supervisor" readonly style="background:var(--s3);color:var(--green);"></div>
+        <div class="ig"><label class="il">PIT Certs</label><input type="text" id="nm-pit" readonly style="background:var(--s3);color:var(--green);"></div>
+      </div>
+    </div>
+
+    <!-- Incident fields -->
+    <div style="font-size:10px;color:var(--amber);font-family:var(--mono);letter-spacing:0.1em;margin-bottom:8px;">INCIDENT DETAILS</div>
+    <div class="g2 mb2">
+      <div class="ig"><label class="il">Date Occurred</label><input type="date" id="nm-date-occurred"></div>
+      <div class="ig"><label class="il">Time Occurred</label><input type="time" id="nm-time-occurred"></div>
+      <div class="ig"><label class="il">Date Reported</label><input type="date" id="nm-date-reported"></div>
+      <div class="ig"><label class="il">Time Reported</label><input type="time" id="nm-time-reported"></div>
+    </div>
+    <div class="g2 mb2">
+      <div class="ig"><label class="il">Department</label>
+        <select id="nm-dept">
+          <option value="">— Select —</option>
+          <option value="Inbound Dock">Inbound Dock</option>
+          <option value="Inbound Stow">Inbound Stow</option>
+          <option value="Case Replen">Case Replen</option>
+          <option value="Pallet Stow">Pallet Stow</option>
+          <option value="Case Stow">Case Stow</option>
+          <option value="Pallet Replen">Pallet Replen</option>
+          <option value="IC/QA/CS">IC/QA/CS</option>
+          <option value="Transfer Out">Transfer Out</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="ig"><label class="il">Station / Aisle</label><input type="text" id="nm-station" placeholder="e.g. Aisle 322, CW 140"></div>
+    </div>
+    <div class="g2 mb2">
+      <div class="ig"><label class="il">Mechanism of Injury</label>
+        <select id="nm-mechanism">
+          <option value="Near Miss">Near Miss</option>
+          <option value="Strain">Strain</option>
+          <option value="Slip, trip and fall">Slip, trip and fall</option>
+          <option value="Struck by or against">Struck by or against</option>
+          <option value="Caught in or between">Caught in or between</option>
+          <option value="Cut, puncture, scrape">Cut, puncture, scrape</option>
+          <option value="Exposure to or Contact with">Exposure to or Contact with</option>
+          <option value="Forceful exertion/pushing/pulling">Forceful exertion/pushing/pulling</option>
+          <option value="Body position/posture">Body position/posture</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="ig"><label class="il">Body Part Affected</label><input type="text" id="nm-body-part" placeholder="e.g. Left knee, lower back"></div>
+    </div>
+    <div class="g2 mb2">
+      <div class="ig"><label class="il">Equipment / Item Involved</label><input type="text" id="nm-equipment" placeholder="e.g. Reach Truck, heavy box"></div>
+      <div class="ig"><label class="il">Process Path Associate Was Working</label><input type="text" id="nm-process-path" placeholder="e.g. Case Replen, Pallet Stow"></div>
+    </div>
+    <div class="ig mb2"><label class="il">What Happened (the incident narrative)</label><textarea id="nm-narrative" placeholder="Describe exactly what occurred…" rows="3"></textarea></div>
+    <div class="g3 mb2">
+      <div class="ig"><label class="il">Area Organization (AO)</label>
+        <select id="nm-ao">
+          <option value="was found to be clear of clutter/debris">Clear of clutter/debris</option>
+          <option value="did not meet AO standards">Did not meet AO standards</option>
+        </select>
+      </div>
+      <div class="ig"><label class="il">PPE Worn?</label>
+        <select id="nm-ppe"><option value="Yes">Yes</option><option value="No">No</option></select>
+      </div>
+      <div class="ig"><label class="il">Working Overtime?</label>
+        <select id="nm-overtime"><option value="was not working overtime">No</option><option value="was working an overtime shift">Yes</option></select>
+      </div>
+      <div class="ig"><label class="il">Labor Shared?</label>
+        <select id="nm-labor-shared"><option value="was not being laborshared">No</option><option value="was being laborshared">Yes</option></select>
+      </div>
+      <div class="ig"><label class="il">Witnesses?</label>
+        <select id="nm-witnesses"><option value="were no witnesses">No</option><option value="were witnesses">Yes</option></select>
+      </div>
+      <div class="ig"><label class="il">Late Report?</label>
+        <select id="nm-late-report"><option value="No">No</option><option value="Yes">Yes</option></select>
+      </div>
+    </div>
+    <div class="g2 mb2">
+      <div class="ig"><label class="il">Pain Level Before Treatment (0–10)</label><input type="number" id="nm-pain-before" value="0" min="0" max="10"></div>
+      <div class="ig"><label class="il">Pain Level After Treatment (0–10)</label><input type="number" id="nm-pain-after" value="0" min="0" max="10"></div>
+    </div>
+    <div class="ig mb2"><label class="il">After Report — Associate Status</label>
+      <select id="nm-after-status">
+        <option value="was able to return to work">Returned to work</option>
+        <option value="went home">Went home</option>
+        <option value="was referred to an outside medical provider">Referred to outside medical</option>
+        <option value="was accommodated in another role for the rest of shift">Accommodated in another role</option>
+        <option value="in a modified work assignment">Modified work assignment</option>
+      </select>
+    </div>
+    <div class="ig mb2"><label class="il">Root Cause</label><textarea id="nm-root-cause" placeholder="What was the root cause of the incident?" rows="2"></textarea></div>
+    <div class="ig mb2"><label class="il">Contributing Factors</label><textarea id="nm-contributing" placeholder="Other contributing factors…" rows="2"></textarea></div>
+    <div class="ig mb2"><label class="il">Actions Created (comma-separated)</label><textarea id="nm-actions" placeholder="Action 1, Action 2, Action 3…" rows="3"></textarea></div>
+    <div class="g2 mb2">
+      <div class="ig"><label class="il">Investigating Manager Login</label><input type="text" id="nm-mgr-login" placeholder="e.g. jeffgona"></div>
+      <div class="ig"><label class="il">Supporting Manager Login</label><input type="text" id="nm-support-login" placeholder="e.g. juanrrr"></div>
+    </div>
+    <button class="btn btn-amber btn-full" onclick="generateNearMissReport()">⚡ Generate Report Paragraph</button>
+    <div id="nm-output" style="display:none;margin-top:12px;">
+      <div style="font-size:10px;color:var(--amber);font-family:var(--mono);letter-spacing:0.1em;margin-bottom:6px;">GENERATED NARRATIVE — COPY AND PASTE INTO YOUR SYSTEM</div>
+      <div id="nm-output-text" style="background:var(--s3);border:1px solid var(--border);padding:12px;font-size:12px;line-height:1.8;white-space:pre-wrap;word-break:break-word;"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="copyNearMissReport()">📋 Copy to Clipboard</button>
+      <span id="nm-copy-confirm" style="font-family:var(--mono);font-size:10px;color:var(--green);margin-left:8px;display:none;">✓ Copied!</span>
+    </div>
   </div>
 
   <div class="g2 mb2">
@@ -1695,6 +1989,123 @@ body.day-mode .priv-btn-active { color: #fff !important; }
     <div class="card-title"><span>📝 Safety Event Log</span><button class="btn btn-ghost btn-sm" id="btn-clear-safety">Clear All</button></div>
     <div id="safety-log"><div style="color:var(--muted);font-size:12px;padding:12px;text-align:center;">No events logged.</div></div>
   </div>
+</div>
+
+<!-- ===== IMPORT ===== -->
+<div id="tab-import" class="panel" role="tabpanel" aria-labelledby="tabbtn-import" tabindex="-1">
+
+  <!-- Profile Build Section -->
+  <div class="card mb2" style="border-left:3px solid var(--amber);">
+    <div class="card-title">👤 Associate Profile Build <span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px;">Drop all 5 files → Run → profiles load into dashboard</span></div>
+    <div style="font-size:11px;color:var(--blue);font-family:var(--mono);background:var(--blue-dim);border:1px solid var(--blue);padding:8px 10px;margin-bottom:12px;">
+      ⬡ ADAPT NOTE — Your ADAPT export has 8 metadata rows at the top. Drop the file as-is — the importer skips those rows automatically.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:12px;" id="profile-dropzone-grid">
+
+      <div class="adapt-drop-zone" id="pdz-roster" onclick="document.getElementById('pfile-roster').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('roster',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-roster">📋 Roster (Required) — .xlsx</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Badge ID · Login · Hire Date · Shift · Supervisor</div>
+        <input type="file" id="pfile-roster" accept=".xlsx,.csv" style="display:none" onchange="handleProfileFile('roster',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="pdz-adapt" onclick="document.getElementById('pfile-adapt').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('adapt',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-adapt">📈 ADAPT Rate Report (Required) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">LC Level · UPH · % to Goal · Process Paths (skips 8 header rows)</div>
+        <input type="file" id="pfile-adapt" accept=".csv" style="display:none" onchange="handleProfileFile('adapt',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="pdz-pit" onclick="document.getElementById('pfile-pit').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('pit',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-pit">🏗️ PIT Certifications (Required) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Reach Truck · Order Pick · ACTIVE / VIOLATION status</div>
+        <input type="file" id="pfile-pit" accept=".csv" style="display:none" onchange="handleProfileFile('pit',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="pdz-pst" onclick="document.getElementById('pfile-pst').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('pst',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-pst">📦 Pallet Stow Rollup (Required) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate JPH / UPH — Pallet Stow function</div>
+        <input type="file" id="pfile-pst" accept=".csv" style="display:none" onchange="handleProfileFile('pst',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="pdz-cst" onclick="document.getElementById('pfile-cst').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('cst',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-cst">🗂️ Case Stow Rollup (Required) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate JPH / UPH — Case Stow function</div>
+        <input type="file" id="pfile-cst" accept=".csv" style="display:none" onchange="handleProfileFile('cst',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="pdz-cr" onclick="document.getElementById('pfile-cr').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('cr',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-cr">🔄 Case Replen Rollup (Optional) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate JPH / UPH — Case Replen function</div>
+        <input type="file" id="pfile-cr" accept=".csv" style="display:none" onchange="handleProfileFile('cr',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="pdz-pr" onclick="document.getElementById('pfile-pr').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleProfileFile('pr',event.dataTransfer.files[0])">
+        <div class="adz-status" id="pstat-pr">🔃 Pallet Replen Rollup (Optional) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate JPH / UPH — Pallet Replen function</div>
+        <input type="file" id="pfile-pr" accept=".csv" style="display:none" onchange="handleProfileFile('pr',this.files[0])">
+      </div>
+
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--s2);border:1px solid var(--border);">
+      <button class="btn btn-amber" id="btn-run-profile-build" onclick="runProfileBuild()" disabled>▶ Build Profiles</button>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+        <span id="profile-ready-count" style="font-size:18px;color:var(--amber);font-weight:700;">0</span>/5 required files loaded &nbsp;·&nbsp;
+        <span id="profile-run-status">Load all 5 required files to enable</span>
+      </div>
+    </div>
+    <div id="profile-build-log" style="display:none;margin-top:8px;background:var(--s3);border:1px solid var(--border);padding:10px;font-family:var(--mono);font-size:10px;line-height:1.9;max-height:200px;overflow-y:auto;"></div>
+    <div id="profile-build-results" style="display:none;margin-top:10px;"></div>
+  </div>
+
+  <!-- Hourly Productivity Section -->
+  <div class="card mb2" style="border-left:3px solid var(--green);">
+    <div class="card-title">📡 Hourly Productivity Import <span style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px;">Drop every hour — each import adds to the shift trend</span></div>
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:10px;">Hour 1 shows first snapshot. Hour 2 shows H1+H2 trending. Accumulates all shift so you see the full arc and projection.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:12px;" id="hourly-dropzone-grid">
+
+      <div class="adapt-drop-zone" id="hdz-pp" onclick="document.getElementById('hfile-pp').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleHourlyFile('pp',event.dataTransfer.files[0])">
+        <div class="adz-status" id="hstat-pp">📊 Process Path Report (Required) — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Overall shift volume · Hours · Rate · % to Plan</div>
+        <input type="file" id="hfile-pp" accept=".csv" style="display:none" onchange="handleHourlyFile('pp',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="hdz-pst" onclick="document.getElementById('hfile-pst').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleHourlyFile('pst',event.dataTransfer.files[0])">
+        <div class="adz-status" id="hstat-pst">📦 Pallet Stow Rollup — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate UPH this hour</div>
+        <input type="file" id="hfile-pst" accept=".csv" style="display:none" onchange="handleHourlyFile('pst',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="hdz-cst" onclick="document.getElementById('hfile-cst').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleHourlyFile('cst',event.dataTransfer.files[0])">
+        <div class="adz-status" id="hstat-cst">🗂️ Case Stow Rollup — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate UPH this hour</div>
+        <input type="file" id="hfile-cst" accept=".csv" style="display:none" onchange="handleHourlyFile('cst',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="hdz-cr" onclick="document.getElementById('hfile-cr').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleHourlyFile('cr',event.dataTransfer.files[0])">
+        <div class="adz-status" id="hstat-cr">🔄 Case Replen Rollup — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate JPH this hour</div>
+        <input type="file" id="hfile-cr" accept=".csv" style="display:none" onchange="handleHourlyFile('cr',this.files[0])">
+      </div>
+
+      <div class="adapt-drop-zone" id="hdz-pr" onclick="document.getElementById('hfile-pr').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');handleHourlyFile('pr',event.dataTransfer.files[0])">
+        <div class="adz-status" id="hstat-pr">🔃 Pallet Replen Rollup — .csv</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Per-associate JPH this hour</div>
+        <input type="file" id="hfile-pr" accept=".csv" style="display:none" onchange="handleHourlyFile('pr',this.files[0])">
+      </div>
+
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--s2);border:1px solid var(--border);">
+      <button class="btn btn-amber" id="btn-run-hourly" onclick="runHourlyDiagnostic()" disabled>▶ Run Diagnostic</button>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+        <span id="hourly-ready-count" style="font-size:18px;color:var(--green);font-weight:700;">0</span>/5 files loaded &nbsp;·&nbsp; Hour <strong id="hourly-current-hour">—</strong> &nbsp;·&nbsp;
+        <span id="hourly-run-status">Load files to run</span>
+      </div>
+    </div>
+    <div id="hourly-build-log" style="display:none;margin-top:8px;background:var(--s3);border:1px solid var(--border);padding:10px;font-family:var(--mono);font-size:10px;line-height:1.9;max-height:200px;overflow-y:auto;"></div>
+    <div id="hourly-results" style="display:none;margin-top:10px;"></div>
+  </div>
+
 </div>
 
 <!-- ===== ANALYTICS ===== -->
@@ -5986,19 +6397,90 @@ function copyHandoff(){
 
 // ── Item 7: Section — THEME SYSTEM ─────────────────────────────────
 // ── SHIFT_CONFIG: single source of truth for all shift definitions ──
-// Adding a new shift = add one entry here. No other changes required.
+// Adding a new shift = one entry here. No other changes required.
+// periods: array of { label, start:'HH:MM', end:'HH:MM', breakAfter:{type:'paid'|'unpaid', start:'HH:MM', end:'HH:MM'} }
 const SHIFT_CONFIG = {
-  version: 1,
+  version: 2,
   codes: {
-    'FHD':   { label:'Front Half Days',    startH:6,  durationH:10.5, pattern:'day'   },
-    'FHN':   { label:'Front Half Nights',  startH:18, durationH:10.5, pattern:'night' },
-    'WED-D': { label:'Wed Days',           startH:6,  durationH:10.5, pattern:'day'   },
-    'WED-N': { label:'Wed Nights',         startH:18, durationH:10.5, pattern:'night' },
-    'BHD':   { label:'Back Half Days',     startH:6,  durationH:10.5, pattern:'day'   },
-    'BHN':   { label:'Back Half Nights',   startH:18, durationH:10.5, pattern:'night' },
+    'FHD': {
+      label:'Front Half Days', startH:7, durationH:10.5, pattern:'day',
+      periods: [
+        { label:'Period 1', start:'07:00', end:'10:15', breakAfter:{ type:'unpaid', start:'10:15', end:'10:45', label:'Unpaid Lunch' } },
+        { label:'Period 2', start:'10:45', end:'13:45', breakAfter:{ type:'paid',   start:'13:45', end:'14:15', label:'Paid Break'   } },
+        { label:'Period 3', start:'14:15', end:'17:30', breakAfter: null },
+      ],
+    },
+    'FHN': {
+      label:'Front Half Nights', startH:18, durationH:10.5, pattern:'night',
+      periods: [
+        { label:'Period 1', start:'18:00', end:'20:45', breakAfter:{ type:'unpaid', start:'20:45', end:'21:15', label:'Unpaid Lunch' } },
+        { label:'Period 2', start:'21:15', end:'00:45', breakAfter:{ type:'paid',   start:'00:45', end:'01:15', label:'Paid Break'   } },
+        { label:'Period 3', start:'01:15', end:'04:30', breakAfter: null },
+      ],
+    },
+    'WED-D': {
+      label:'Wed Days', startH:7, durationH:10.5, pattern:'day',
+      periods: [
+        { label:'Period 1', start:'07:00', end:'10:15', breakAfter:{ type:'unpaid', start:'10:15', end:'10:45', label:'Unpaid Lunch' } },
+        { label:'Period 2', start:'10:45', end:'13:45', breakAfter:{ type:'paid',   start:'13:45', end:'14:15', label:'Paid Break'   } },
+        { label:'Period 3', start:'14:15', end:'17:30', breakAfter: null },
+      ],
+    },
+    'WED-N': {
+      label:'Wed Nights', startH:18, durationH:10.5, pattern:'night',
+      periods: [
+        { label:'Period 1', start:'18:00', end:'20:45', breakAfter:{ type:'unpaid', start:'20:45', end:'21:15', label:'Unpaid Lunch' } },
+        { label:'Period 2', start:'21:15', end:'00:45', breakAfter:{ type:'paid',   start:'00:45', end:'01:15', label:'Paid Break'   } },
+        { label:'Period 3', start:'01:15', end:'04:30', breakAfter: null },
+      ],
+    },
+    'BHD': {
+      label:'Back Half Days', startH:7, durationH:10.5, pattern:'day',
+      periods: [
+        { label:'Period 1', start:'07:00', end:'10:15', breakAfter:{ type:'unpaid', start:'10:15', end:'10:45', label:'Unpaid Lunch' } },
+        { label:'Period 2', start:'10:45', end:'13:45', breakAfter:{ type:'paid',   start:'13:45', end:'14:15', label:'Paid Break'   } },
+        { label:'Period 3', start:'14:15', end:'17:30', breakAfter: null },
+      ],
+    },
+    'BHN': {
+      label:'Back Half Nights', startH:18, durationH:10.5, pattern:'night',
+      periods: [
+        { label:'Period 1', start:'18:00', end:'20:45', breakAfter:{ type:'unpaid', start:'20:45', end:'21:15', label:'Unpaid Lunch' } },
+        { label:'Period 2', start:'21:15', end:'00:45', breakAfter:{ type:'paid',   start:'00:45', end:'01:15', label:'Paid Break'   } },
+        { label:'Period 3', start:'01:15', end:'04:30', breakAfter: null },
+      ],
+    },
   },
   defaultCode: 'FHN',
 };
+
+// ── Helper: get current period for a shift code ──────────────────────
+function getCurrentShiftPeriod(shiftCode) {
+  const cfg = SHIFT_CONFIG.codes[shiftCode];
+  if (!cfg || !cfg.periods) return null;
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  function toMins(t) {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  }
+  for (const p of cfg.periods) {
+    let start = toMins(p.start);
+    let end   = toMins(p.end);
+    // Handle overnight periods (end < start means it crosses midnight)
+    if (end < start) end += 1440;
+    let cur = nowMins;
+    if (cur < start && cfg.pattern === 'night') cur += 1440;
+    if (cur >= start && cur < end) return p;
+    // Check break window
+    if (p.breakAfter) {
+      const bs = toMins(p.breakAfter.start);
+      const be = toMins(p.breakAfter.end);
+      if (cur >= bs && cur < be) return { ...p, inBreak: true, breakInfo: p.breakAfter };
+    }
+  }
+  return cfg.periods[cfg.periods.length - 1]; // default to last period
+}
 // Derived maps — kept for backward compatibility with existing callers
 const SHIFT_TIMES = Object.fromEntries(
   Object.entries(SHIFT_CONFIG.codes).map(([k,v]) => [k, v.startH < 12 ? `${v.startH}:00 AM` : `${v.startH - 12 || 12}:00 PM`])
@@ -12301,6 +12783,167 @@ const WORK_SPOTS = {
   '':             { label:'Unassigned',     color:'var(--muted)',           tag:'—',   family:''       },
 };
 
+// ═══════════════════════════════════════════════════════════════
+// EPJ ZONE ROUTING ENGINE
+// Rule: EPJ riders prefer the nearest CW to their buffer zone.
+// Cascade to adjacent CWs if preferred is unavailable.
+// Never leave product sitting when any CW is open.
+// ═══════════════════════════════════════════════════════════════
+
+// ── QZZ1 REAL FLOOR MAP — derived from floor_plan_v27.html ──────────────
+// DD X → Buf X → CW X (same column, confirmed from floor plan)
+// Active CWs: 137-143, 145-149, 151-156, 158-163
+// NO CW at: 131-135 (HAZMAT zone), 136 (forklift), 144 (forklift),
+//           150 (forklift), 157 (forklift), 164-166 (OP Stage)
+// MAP 3-4 ASIN zone: CW 125-129 (stacked vertically, separate from main CW row)
+// cwPreference = nearest active CW first, then cascade outward
+// longHaul threshold = 3+ hops from direct CW
+
+const BUFFER_ZONE_MAP = {
+  // ── HAZMAT ZONE (131-135): Buffers exist, NO direct CW ──────────────
+  // These buffers cascade to nearest available CW (137+)
+  131: { zone:'HZ', label:'HZ', cap:26, directCW:null,
+    cwPreference:[137,138,139,140,141,142,143,145,146,147,148,149],
+    note:'Hazmat zone — CW positions occupied by Hazmat. Route to CW 137+.' },
+  132: { zone:'HZ', label:'HZ', cap:26, directCW:null,
+    cwPreference:[137,138,139,140,141,142,143,145,146,147,148,149],
+    note:'Hazmat zone — route to CW 137+.' },
+  133: { zone:'HZ', label:'HZ', cap:null, directCW:null,
+    cwPreference:[137,138,139,140,141,142,143,145,146,147,148,149],
+    note:'Hazmat zone — route to CW 137+.' },
+  134: { zone:'HZ', label:'HZ', cap:18, directCW:null,
+    cwPreference:[137,138,139,140,141,142,143,145,146,147,148,149],
+    note:'Hazmat zone (Clamp Area DD 134/135). Route to CW 137+.' },
+  135: { zone:'HZ', label:'HZ', cap:18, directCW:null,
+    cwPreference:[137,138,139,140,141,142,143,145,146,147,148,149],
+    note:'Hazmat zone (Clamp Area DD 134/135). Route to CW 137+.' },
+
+  // ── ZONE A (137-143): Active receiving zone ───────────────────────────
+  // Note: 136 = forklift parking (no buffer, no CW)
+  137: { zone:'A', label:'ZA', cap:33, directCW:137,
+    cwPreference:[137,138,139,140,141,142,143,145,146,147,148,149] },
+  138: { zone:'A', label:'ZA', cap:33, directCW:138,
+    cwPreference:[138,137,139,140,141,142,143,145,146,147,148,149] },
+  139: { zone:'A', label:'ZA', cap:33, directCW:139,
+    cwPreference:[139,138,140,137,141,142,143,145,146,147,148,149] },
+  140: { zone:'A', label:'ZA', cap:28, directCW:140,
+    cwPreference:[140,141,139,142,138,143,137,145,146,147,148,149] },
+  141: { zone:'A', label:'ZA', cap:33, directCW:141,
+    cwPreference:[141,140,142,139,143,138,137,145,146,147,148,149] },
+  142: { zone:'A', label:'ZA', cap:null, directCW:142,
+    cwPreference:[142,141,143,140,139,138,145,137,146,147,148,149] },
+  143: { zone:'A', label:'ZA', cap:null, directCW:143,
+    cwPreference:[143,142,141,140,145,139,146,138,147,137,148,149] },
+  // 144 = forklift parking column (no Buf 144, no CW 144)
+
+  // ── ZONE B (145-149): Active receiving zone ───────────────────────────
+  145: { zone:'B', label:'ZB', cap:33, directCW:145,
+    cwPreference:[145,146,143,147,142,148,141,149,140,151,152,153] },
+  146: { zone:'B', label:'ZB', cap:33, directCW:146,
+    cwPreference:[146,145,147,143,148,142,149,141,151,140,152,153] },
+  147: { zone:'B', label:'ZB', cap:22, directCW:147,
+    cwPreference:[147,148,146,149,145,143,151,142,152,141,153,140] },
+  148: { zone:'B', label:'ZB', cap:33, directCW:148,
+    cwPreference:[148,147,149,146,145,143,151,142,152,141,153,140] },
+  149: { zone:'B', label:'ZB', cap:null, directCW:149,
+    cwPreference:[149,148,147,146,145,143,151,142,152,141,153,140] },
+  // 150 = forklift parking column (no Buf 150, no CW 150)
+
+  // ── ZONE C (151-156): Active receiving zone ───────────────────────────
+  151: { zone:'C', label:'ZC', cap:28, directCW:151,
+    cwPreference:[151,152,149,153,148,154,147,155,146,156,145,158] },
+  152: { zone:'C', label:'ZC', cap:33, directCW:152,
+    cwPreference:[152,151,153,149,154,148,155,147,156,146,158,145] },
+  153: { zone:'C', label:'ZC', cap:33, directCW:153,
+    cwPreference:[153,152,154,151,155,149,156,148,158,147,159,146] },
+  154: { zone:'C', label:'ZC', cap:33, directCW:154,
+    cwPreference:[154,153,155,152,156,151,158,149,159,148,160,147] },
+  155: { zone:'C', label:'ZC', cap:33, directCW:155,
+    cwPreference:[155,156,154,153,158,152,159,151,160,149,161,148] },
+  156: { zone:'C', label:'ZC', cap:33, directCW:156,
+    cwPreference:[156,155,154,158,153,159,152,160,151,161,149,162] },
+  // 157 = forklift parking column (no Buf 157, no CW 157)
+
+  // ── ZONE D (158-163): Active receiving zone ───────────────────────────
+  158: { zone:'D', label:'ZD', cap:33, directCW:158,
+    cwPreference:[158,159,156,160,155,161,154,162,153,163,152,151] },
+  159: { zone:'D', label:'ZD', cap:33, directCW:159,
+    cwPreference:[159,158,160,156,161,155,162,154,163,153,152,151] },
+  160: { zone:'D', label:'ZD', cap:33, directCW:160,
+    cwPreference:[160,159,161,158,162,156,163,155,154,153,152,151] },
+  161: { zone:'D', label:'ZD', cap:33, directCW:161,
+    cwPreference:[161,160,162,159,163,158,156,155,154,153,152,151] },
+  162: { zone:'D', label:'ZD', cap:33, directCW:162,
+    cwPreference:[162,163,161,160,159,158,156,155,154,153,152,151] },
+  163: { zone:'D', label:'ZD', cap:33, directCW:163,
+    cwPreference:[163,162,161,160,159,158,156,155,154,153,152,151] },
+
+  // ── OP STAGE ZONE (164-166): No CW — pallets go to OP cages / PID ────
+  164: { zone:'OP', label:'OP', cap:33, directCW:null,
+    cwPreference:[163,162,161,160,159,158],
+    note:'OP Stage area — pallets from here go to PID/OP cages, not regular CW.' },
+  165: { zone:'OP', label:'OP', cap:33, directCW:null,
+    cwPreference:[163,162,161,160,159,158],
+    note:'OP Stage area — pallets from here go to PID/OP cages, not regular CW.' },
+  166: { zone:'OP', label:'OP', cap:null, directCW:null,
+    cwPreference:[163,162,161,160,159,158],
+    note:'OP Stage area — pallets from here go to PID/OP cages, not regular CW.' },
+};
+
+// CW availability state — keyed by CW number, value: 'available'|'full'|'unavailable'
+let cwAvailability = JSON.parse(localStorage.getItem('ob_cw_availability') || '{}');
+
+function saveCWAvailability() {
+  localStorage.setItem('ob_cw_availability', JSON.stringify(cwAvailability));
+}
+
+/**
+ * Get the optimal CW assignment for a buffer zone.
+ * Returns { cw, isOptimal, hops, longHaul, reason, isPID, isHazmat }
+ */
+function getOptimalCW(bufferNum) {
+  const cfg = BUFFER_ZONE_MAP[bufferNum];
+  if (!cfg) return null;
+
+  // OP Stage buffers — pallets go to PID/OP cages, not a regular CW
+  if (cfg.zone === 'OP') {
+    return {
+      cw: null, isOptimal: false, hops: 0, longHaul: false, isPID: true,
+      reason: `Buf ${bufferNum} — OP Stage zone. Pallets go to PID conveyor belt / OP cages, not a car wash.`,
+    };
+  }
+
+  // Hazmat buffers — no direct CW, cascade to nearest
+  const isHazmat = cfg.zone === 'HZ';
+
+  for (let i = 0; i < cfg.cwPreference.length; i++) {
+    const cw = cfg.cwPreference[i];
+    const status = cwAvailability[cw] || 'available';
+    if (status !== 'full' && status !== 'unavailable') {
+      const hops = isHazmat ? i + 3 : i; // hazmat buffers always penalty
+      const isOptimal = !isHazmat && i === 0;
+      const longHaul = hops >= 3;
+      return {
+        cw, isOptimal, hops, longHaul, isPID: false, isHazmat,
+        reason: isOptimal
+          ? `CW ${cw} is directly in front of Buf ${bufferNum} ✓`
+          : isHazmat
+            ? `⚠ Hazmat zone — Buf ${bufferNum} has no direct CW. Routing to CW ${cw} (${i+1} spots away). Long haul — flag for AM.`
+            : longHaul
+              ? `⚠ Long haul — CW ${cw} is ${hops} spots from Buf ${bufferNum}. Cost impact — alert AM.`
+              : `CW ${cw} — ${hops} spot${hops!==1?'s':''} from Buf ${bufferNum} (direct CW ${cfg.directCW} unavailable)`,
+      };
+    }
+  }
+
+  // All CWs full — never block flow
+  const fallback = cfg.cwPreference[0];
+  return {
+    cw: fallback, isOptimal: false, hops: 99, longHaul: true, isPID: false, isHazmat, forced: true,
+    reason: `🚨 ALL CWs full — routing to CW ${fallback} to keep flow moving. Escalate immediately.`,
+  };
+}
+
 // Qualification return codes — callers check .code, UI renders .reason
 const QUAL_CODES = {
   QUALIFIED:            'QUALIFIED',
@@ -14795,6 +15438,1353 @@ syncAllTabs();
 setInterval(() => { _staleSweep(); _autoTick(); }, 60_000);
 
 } // end if(BOOT_OK) safe-mode gate
+
+// ═══════════════════════════════════════════════════════════════
+// SHIFT PLANNER — WIP + EPJ ROUTING + STAFFING CALC
+// ═══════════════════════════════════════════════════════════════
+
+let wipZones = JSON.parse(localStorage.getItem('ob_wip_zones') || '[]');
+
+function saveWIP() { localStorage.setItem('ob_wip_zones', JSON.stringify(wipZones)); }
+
+function addWIPZone() {
+  wipZones.push({ buffer: '', palletsToReceive: 0, palletsToTransport: 0 });
+  saveWIP();
+  renderWIPGrid();
+}
+
+function removeWIPZone(idx) {
+  wipZones.splice(idx, 1);
+  saveWIP();
+  renderWIPGrid();
+}
+
+function renderWIPGrid() {
+  const grid = document.getElementById('wip-zone-grid');
+  if (!grid) return;
+  if (!wipZones.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:12px;font-family:var(--mono);">No buffer zones added. Click + Add Buffer Zone.</div>';
+    renderPlannerCalc();
+    return;
+  }
+  grid.innerHTML = wipZones.map((z, i) => {
+    const bufNum = parseInt(z.buffer);
+    const cfg = bufNum ? BUFFER_ZONE_MAP[bufNum] : null;
+    const cap = cfg?.cap ? `${cfg.cap} pal max` : '';
+    const zoneTag = cfg ? `Zone ${cfg.zone}` : '';
+    const isPID = cfg?.zone === 'OP';
+    const isHazmat = cfg?.zone === 'HZ';
+    const borderColor = isPID ? 'var(--purple,#a78bfa)' : isHazmat ? 'var(--red)' : 'var(--border)';
+    return `
+    <div style="background:var(--s2);border:1px solid ${borderColor};padding:12px;position:relative;">
+      <button onclick="removeWIPZone(${i})" style="position:absolute;top:6px;right:6px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;">✕</button>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--amber);margin-bottom:6px;letter-spacing:0.08em;">
+        BUFFER ZONE ${zoneTag ? `· ${zoneTag}` : ''} ${cap ? `· ${cap}` : ''}
+        ${isPID ? '<span style="color:var(--purple,#a78bfa);"> · PID/OP STAGE</span>' : ''}
+        ${isHazmat ? '<span style="color:var(--red);"> · HAZMAT — no direct CW</span>' : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <div><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:3px;">Buffer #</label>
+          <input type="number" min="131" max="166" value="${z.buffer||''}" placeholder="131–166"
+            style="width:100%;background:var(--s3);border:1px solid var(--border);color:var(--text);padding:5px;font-family:var(--mono);font-size:12px;"
+            oninput="wipZones[${i}].buffer=parseInt(this.value)||'';saveWIP();renderWIPGrid();">
+        </div>
+        <div><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:3px;">${isPID ? 'Pallets to PID' : 'Ready to Receive'}</label>
+          <input type="number" min="0" value="${z.palletsToReceive||0}"
+            style="width:100%;background:var(--s3);border:1px solid var(--border);color:var(--text);padding:5px;font-family:var(--mono);font-size:12px;"
+            oninput="wipZones[${i}].palletsToReceive=parseInt(this.value)||0;saveWIP();renderPlannerCalc();">
+        </div>
+        ${!isPID ? `<div><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:3px;">Ready to Transport</label>
+          <input type="number" min="0" value="${z.palletsToTransport||0}"
+            style="width:100%;background:var(--s3);border:1px solid var(--border);color:var(--text);padding:5px;font-family:var(--mono);font-size:12px;"
+            oninput="wipZones[${i}].palletsToTransport=parseInt(this.value)||0;saveWIP();renderPlannerCalc();">
+        </div>` : ''}
+        <div id="wip-routing-${i}" style="display:flex;align-items:center;font-family:var(--mono);font-size:10px;padding-top:${isPID?'0':'14'}px;"></div>
+      </div>
+      ${cfg?.note ? `<div style="font-size:9px;color:var(--muted);margin-top:6px;font-family:var(--mono);">${cfg.note}</div>` : ''}
+    </div>
+  `}).join('');
+  renderPlannerCalc();
+}
+
+function renderPlannerCalc() {
+  // Period banner
+  const shiftCode = document.getElementById('shift-type')?.value || 'FHN';
+  const period = getCurrentShiftPeriod(shiftCode);
+  const cfg = SHIFT_CONFIG.codes[shiftCode];
+
+  const periodBadge = document.getElementById('planner-period-badge');
+  const periodDetail = document.getElementById('planner-period-detail');
+  const periodGrid   = document.getElementById('planner-period-grid');
+
+  if (period && periodBadge) {
+    periodBadge.textContent = period.label + (period.inBreak ? ' — ON BREAK' : '');
+  }
+  if (cfg && periodGrid) {
+    periodGrid.innerHTML = cfg.periods.map((p, i) => {
+      const isCurrent = period && period.label === p.label;
+      return `<div style="background:${isCurrent?'var(--amber-dim)':'var(--s2)'};border:1px solid ${isCurrent?'var(--amber)':'var(--border)'};padding:8px;font-family:var(--mono);font-size:10px;">
+        <div style="color:${isCurrent?'var(--amber)':'var(--muted)'};font-weight:700;">${p.label}</div>
+        <div>${p.start} – ${p.end}</div>
+        ${p.breakAfter ? `<div style="color:var(--muted);margin-top:2px;">${p.breakAfter.label}: ${p.breakAfter.start}–${p.breakAfter.end} ${p.breakAfter.type==='paid'?'(paid)':'(unpaid)'}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // Staffing calc
+  const totalReceive   = wipZones.reduce((s,z) => s + (z.palletsToReceive||0), 0);
+  const totalTransport = wipZones.reduce((s,z) => s + (z.palletsToTransport||0), 0);
+  const stowRatio  = parseFloat(document.getElementById('pl-stow-ratio')?.value) || 1.5;
+  const pstTarget  = parseFloat(document.getElementById('pl-pst-target')?.value) || 10;
+  const cstTarget  = parseFloat(document.getElementById('pl-cst-target')?.value) || 70;
+  const rcvTarget  = parseFloat(document.getElementById('pl-receive-target')?.value) || 55;
+
+  const stowNeeded     = Math.ceil(totalReceive * stowRatio);
+  const receiversNeeded  = Math.ceil(totalReceive / 30);  // 30 pallets/hr per team
+  const auditorsNeeded   = Math.ceil(receiversNeeded * 0.5);
+  const downstackNeeded  = Math.ceil(receiversNeeded * 0.5);
+  const epjNeeded        = Math.ceil(totalTransport / 2);  // 2 pallets moved per EPJ per cycle
+  const stowersNeeded    = Math.ceil(stowNeeded / pstTarget);
+
+  const calcEl = document.getElementById('planner-calc-output');
+  if (!calcEl) return;
+
+  if (!totalReceive && !totalTransport) {
+    calcEl.innerHTML = '<span style="color:var(--muted);">Enter WIP levels above to calculate staffing needs.</span>';
+  } else {
+    calcEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px;">
+        <div style="background:var(--s2);border:1px solid var(--border);padding:10px;">
+          <div style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-bottom:4px;">TOTAL PALLETS TO RECEIVE</div>
+          <div style="font-size:22px;font-weight:700;color:var(--amber);">${totalReceive}</div>
+        </div>
+        <div style="background:var(--s2);border:1px solid var(--border);padding:10px;">
+          <div style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-bottom:4px;">STOW NEEDED (${stowRatio}× ratio)</div>
+          <div style="font-size:22px;font-weight:700;color:var(--amber);">${stowNeeded}</div>
+        </div>
+        <div style="background:var(--s2);border:1px solid var(--border);padding:10px;">
+          <div style="font-size:9px;color:var(--muted);font-family:var(--mono);margin-bottom:4px;">PALLETS TO TRANSPORT</div>
+          <div style="font-size:22px;font-weight:700;color:var(--blue);">${totalTransport}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;font-family:var(--mono);font-size:11px;">
+        <div style="background:var(--green-dim);border:1px solid var(--green);padding:8px;">
+          <div style="color:var(--muted);font-size:9px;">RECEIVERS NEEDED</div>
+          <div style="color:var(--green);font-size:18px;font-weight:700;">${receiversNeeded}</div>
+        </div>
+        <div style="background:var(--green-dim);border:1px solid var(--green);padding:8px;">
+          <div style="color:var(--muted);font-size:9px;">AUDITORS NEEDED</div>
+          <div style="color:var(--green);font-size:18px;font-weight:700;">${auditorsNeeded}</div>
+        </div>
+        <div style="background:var(--green-dim);border:1px solid var(--green);padding:8px;">
+          <div style="color:var(--muted);font-size:9px;">DOWN-STACKERS</div>
+          <div style="color:var(--green);font-size:18px;font-weight:700;">${downstackNeeded}</div>
+        </div>
+        <div style="background:var(--blue-dim);border:1px solid var(--blue);padding:8px;">
+          <div style="color:var(--muted);font-size:9px;">EPJ RIDERS NEEDED</div>
+          <div style="color:var(--blue);font-size:18px;font-weight:700;">${epjNeeded}</div>
+        </div>
+        <div style="background:var(--amber-dim);border:1px solid var(--amber);padding:8px;">
+          <div style="color:var(--muted);font-size:9px;">STOWERS NEEDED</div>
+          <div style="color:var(--amber);font-size:18px;font-weight:700;">${stowersNeeded}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // EPJ routing per zone
+  const routingEl = document.getElementById('epj-routing-output');
+  if (routingEl && wipZones.length) {
+    const rows = wipZones.map((z, i) => {
+      const bufNum = parseInt(z.buffer);
+      if (!bufNum || !z.palletsToTransport) return '';
+      const route = getOptimalCW(bufNum);
+      if (!route) return '';
+      const color = route.isOptimal ? 'var(--green)' : route.longHaul ? 'var(--red)' : 'var(--amber)';
+      // Update inline routing display
+      const inlineEl = document.getElementById(`wip-routing-${i}`);
+      if (inlineEl) inlineEl.innerHTML = `<span style="color:${color};">→ CW ${route.cw}${route.longHaul?' ⚠':''}</span>`;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;">
+        <span style="color:var(--muted);min-width:90px;">Buffer ${bufNum}</span>
+        <span style="color:var(--muted);">→</span>
+        <span style="color:${color};font-weight:700;">CW ${route.cw}</span>
+        <span style="color:var(--muted);font-size:10px;">${route.reason}</span>
+      </div>`;
+    }).filter(Boolean).join('');
+    routingEl.innerHTML = rows || '<span style="color:var(--muted);">No transport zones with pallets yet.</span>';
+  }
+
+  // CW availability grid — only show real active CWs
+  const ACTIVE_CWS = [137,138,139,140,141,142,143,145,146,147,148,149,
+                      151,152,153,154,155,156,158,159,160,161,162,163];
+  const cwGrid = document.getElementById('cw-availability-grid');
+  if (cwGrid) {
+    // Show all active CWs, highlight those relevant to current WIP
+    const activeBufCWs = new Set();
+    wipZones.forEach(z => {
+      const b = parseInt(z.buffer);
+      if (b && BUFFER_ZONE_MAP[b]) {
+        BUFFER_ZONE_MAP[b].cwPreference.forEach(cw => activeBufCWs.add(cw));
+      }
+    });
+    cwGrid.innerHTML = ACTIVE_CWS.map(cw => {
+      const status = cwAvailability[cw] || 'available';
+      const isRelevant = activeBufCWs.has(cw);
+      const color = status === 'available' ? 'var(--green)' : status === 'full' ? 'var(--red)' : 'var(--muted)';
+      const opacity = isRelevant ? '1' : '0.4';
+      return `<button onclick="toggleCWStatus(${cw})" style="font-family:var(--mono);font-size:10px;padding:4px 8px;background:var(--s2);border:1px solid ${color};color:${color};cursor:pointer;opacity:${opacity};">CW ${cw}<br><span style="font-size:8px;">${status.toUpperCase()}</span></button>`;
+    }).join('');
+  }
+
+  // Alerts
+  const alertEl = document.getElementById('planner-alerts');
+  if (alertEl) {
+    const alerts = [];
+    wipZones.forEach(z => {
+      const b = parseInt(z.buffer);
+      if (b && z.palletsToTransport) {
+        const route = getOptimalCW(b);
+        if (route && route.longHaul) alerts.push(`⚠ Buffer ${b}: EPJ routing to CW ${route.cw} — ${route.hops} hops away. Cost impact.`);
+        if (route && route.forced) alerts.push(`🚨 Buffer ${b}: All car washes full — product is sitting. Escalate immediately.`);
+      }
+    });
+    if (totalReceive > 0) {
+      const stowRatioAlert = stowNeeded > stowersNeeded * pstTarget;
+      if (stowRatioAlert) alerts.push(`⚠ Stow capacity gap — need ${stowNeeded} pallets stowed but current headcount can only handle ${stowersNeeded * pstTarget}. Consider labor share or BTO review.`);
+    }
+    alertEl.innerHTML = alerts.map(a => `<div class="alert a-amber" style="margin-bottom:6px;">${a}</div>`).join('');
+  }
+}
+
+function toggleCWStatus(cw) {
+  const current = cwAvailability[cw] || 'available';
+  const cycle = { available: 'full', full: 'unavailable', unavailable: 'available' };
+  cwAvailability[cw] = cycle[current];
+  saveCWAvailability();
+  renderPlannerCalc();
+}
+
+// Init planner on tab switch
+document.addEventListener('DOMContentLoaded', () => {
+  renderWIPGrid();
+  document.getElementById('tab-planner')?.addEventListener('click', renderPlannerCalc, { once: false });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// NEAR MISS QUICK-FILL
+// ═══════════════════════════════════════════════════════════════
+
+let _nmSelectedProfile = null;
+
+function nmSearchAssociate(query) {
+  const resultsEl = document.getElementById('nm-search-results');
+  if (!query || query.length < 2) { resultsEl.style.display = 'none'; return; }
+  const q = query.toLowerCase().trim();
+
+  // Search loaded associates first
+  const matches = (typeof associates !== 'undefined' ? associates : [])
+    .filter(a => {
+      const name = (a.name || '').toLowerCase();
+      const login = (a.login || a.employeeNumberNorm || '').toLowerCase();
+      const badge = (a.badgeId || '').toLowerCase();
+      return name.includes(q) || login.includes(q) || badge.includes(q);
+    }).slice(0, 8);
+
+  // Also search imported profiles from localStorage
+  const obProfiles = JSON.parse(localStorage.getItem('ob_profiles') || '{}');
+  const profileMatches = Object.values(obProfiles)
+    .filter(p => {
+      const name = (p.name || '').toLowerCase();
+      const login = (p.login || '').toLowerCase();
+      const badge = (p.barcodeId || '').toLowerCase();
+      return name.includes(q) || login.includes(q) || badge.includes(q);
+    }).slice(0, 8);
+
+  const allMatches = [...matches.map(a => ({
+    displayName: a.name || a.displayCode,
+    login: a.login || a.employeeNumberNorm,
+    badge: a.badgeId,
+    source: 'labor-board',
+    raw: a,
+  })), ...profileMatches.map(p => ({
+    displayName: p.name,
+    login: p.login,
+    badge: p.barcodeId,
+    source: 'profiles',
+    raw: p,
+  }))].slice(0, 8);
+
+  if (!allMatches.length) {
+    resultsEl.style.display = 'none';
+    return;
+  }
+
+  resultsEl.style.display = 'block';
+  resultsEl.innerHTML = allMatches.map((m, i) => `
+    <div onclick="nmSelectAssociate(${i})" data-idx="${i}"
+      style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;"
+      onmouseover="this.style.background='var(--s3)'" onmouseout="this.style.background=''">
+      <span style="color:var(--text);">${m.displayName}</span>
+      <span style="color:var(--muted);font-family:var(--mono);font-size:10px;margin-left:8px;">${m.login || ''}</span>
+      <span style="color:var(--muted);font-family:var(--mono);font-size:10px;margin-left:8px;">${m.badge || ''}</span>
+      <span style="color:var(--amber);font-size:9px;margin-left:8px;">${m.source}</span>
+    </div>
+  `);
+  resultsEl._matches = allMatches;
+}
+
+function nmSelectAssociate(idx) {
+  const resultsEl = document.getElementById('nm-search-results');
+  const match = resultsEl._matches?.[idx];
+  if (!match) return;
+  _nmSelectedProfile = match;
+  resultsEl.style.display = 'none';
+
+  const displayEl = document.getElementById('nm-selected-display');
+  if (displayEl) displayEl.innerHTML = `<span style="color:var(--green);">${match.displayName}</span> <span style="color:var(--muted);font-size:10px;">${match.login}</span>`;
+
+  // Auto-fill from profile
+  const p = match.raw;
+  const profileFields = document.getElementById('nm-profile-fields');
+  if (profileFields) profileFields.style.display = 'block';
+
+  // Hire date
+  const hireDate = p.hireDate || p['Last Hire Date'] || p['last_hire_date'] || '';
+  setNMField('nm-hire-date', hireDate ? new Date(hireDate).toLocaleDateString('en-US') : '—');
+
+  // Tenure
+  const tenureLabel = p.tenureLabel || p.tenure_label || '';
+  const tenureDays  = p.tenureDays  || p.tenure_days  || '';
+  setNMField('nm-tenure', tenureLabel || (tenureDays ? `${tenureDays} days` : '—'));
+
+  // LC
+  const lc = p.lcLevel || p.lc || p['LC_Level'] || p['LEARNING_CURVE_LEVEL'] || '';
+  const jobLevel = p.jobLevel || p['Job Level'] || p['job_level'] || '';
+  setNMField('nm-lc', [jobLevel, lc].filter(Boolean).join(' · ') || '—');
+
+  // Shift
+  const shift = p.shiftPattern || p['Shift Pattern'] || p.shiftCode || '';
+  setNMField('nm-shift', shift || '—');
+
+  // Supervisor
+  const sup = p.supervisor || p['Supervisor Name'] || '';
+  setNMField('nm-supervisor', sup || '—');
+
+  // PIT
+  const rt = p.rtStatus || p['RT_Status'] || '';
+  const op = p.opStatus || p['OP_Status'] || '';
+  const pitStr = [rt ? `RT: ${rt}` : '', op ? `OP: ${op}` : ''].filter(Boolean).join(' · ');
+  setNMField('nm-pit', pitStr || '—');
+
+  // Pre-fill process path from ADAPT if available
+  const paths = p.processPaths || p['Process_Paths'] || '';
+  const processPathEl = document.getElementById('nm-process-path');
+  if (processPathEl && paths && !processPathEl.value) processPathEl.value = paths.split('|')[0].trim();
+
+  // Auto-set today's date/time
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().slice(0,5);
+  ['nm-date-occurred','nm-date-reported'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = dateStr;
+  });
+  ['nm-time-occurred','nm-time-reported'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = timeStr;
+  });
+}
+
+function setNMField(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val;
+}
+
+function generateNearMissReport() {
+  const g = id => (document.getElementById(id)?.value || '').trim();
+
+  const fc = 'QZZ1';
+  const dept        = g('nm-dept');
+  const mechanism   = g('nm-mechanism');
+  const bodyPart    = g('nm-body-part');
+  const dateOcc     = g('nm-date-occurred');
+  const timeOcc     = g('nm-time-occurred');
+  const dateRep     = g('nm-date-reported');
+  const timeRep     = g('nm-time-reported');
+  const station     = g('nm-station');
+  const narrative   = g('nm-narrative');
+  const equipment   = g('nm-equipment');
+  const ao          = g('nm-ao');
+  const ppe         = g('nm-ppe') === 'Yes' ? 'was wearing the proper PPE' : 'was not wearing the required PPE';
+  const overtime    = g('nm-overtime');
+  const laborShared = g('nm-labor-shared');
+  const witnesses   = `There ${g('nm-witnesses') === 'were no witnesses' ? 'were no witnesses' : 'were witnesses'}`;
+  const processPath = g('nm-process-path');
+  const hireDate    = g('nm-hire-date');
+  const tenure      = g('nm-tenure');
+  const painBefore  = g('nm-pain-before');
+  const painAfter   = g('nm-pain-after');
+  const afterStatus = g('nm-after-status');
+  const rootCause   = g('nm-root-cause');
+  const contributing = g('nm-contributing');
+  const actionsRaw  = g('nm-actions');
+  const mgrLogin    = g('nm-mgr-login');
+  const supportLogin = g('nm-support-login');
+  const lateReport  = g('nm-late-report') === 'Yes';
+
+  // Format dates
+  const fmtDate = d => { try { return new Date(d).toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}); } catch(e) { return d; } };
+  const fmtTime = t => { try { const [h,m]=t.split(':'); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?'PM':'AM'}`; } catch(e) { return t; } };
+
+  const actions = actionsRaw.split(',').map(a=>a.trim()).filter(Boolean);
+  const actionCount = actions.length;
+
+  let para = `${fc} (${dept}, ${mechanism}, ${bodyPart}) - `;
+  if (lateReport) para += `This incident was a late report. `;
+  para += `On ${fmtDate(dateOcc)} at approximately ${fmtTime(timeOcc)}, an AA working in ${processPath || dept} at ${station} experienced an injury to their ${bodyPart}. `;
+  para += `The incident occurred when ${narrative}. `;
+  para += `The incident was reported on ${fmtDate(dateRep)} at ${fmtTime(timeRep)}.`;
+  if (lateReport) para += ` Late report survey was collected.`;
+  para += `\n\nThe specific item/equipment involved is ${equipment}. The area organization in the area ${ao}. The associate ${ppe} at the time of incident. The associate ${overtime}. The associate ${laborShared} when the injury occurred. ${witnesses} to the incident. The associate was properly trained in the process path they were working. The associate was hired on ${hireDate} and their tenure is ${tenure}. \n\n After the report was concluded, the associate ${afterStatus}. The associate's pain level prior to treatment was a ${painBefore} out of 10. The associate's pain level after treatment was a ${painAfter} out of 10. The root cause of the incident was found to be: ${rootCause}. ${contributing ? `Other contributing factors include: ${contributing}. ` : ''}${actionCount ? `${actionCount} action(s) created as a result of this incident.  The actions created include: ${actions.join(',')}.` : ''}`;
+  if (mgrLogin) para += `\n\n  This investigation was completed by ${mgrLogin}${supportLogin ? ` with support of ${supportLogin}` : ''}.`;
+
+  const outputEl = document.getElementById('nm-output');
+  const textEl   = document.getElementById('nm-output-text');
+  if (outputEl) outputEl.style.display = 'block';
+  if (textEl) textEl.textContent = para;
+}
+
+function copyNearMissReport() {
+  const text = document.getElementById('nm-output-text')?.textContent || '';
+  navigator.clipboard.writeText(text).then(() => {
+    const confirm = document.getElementById('nm-copy-confirm');
+    if (confirm) { confirm.style.display = 'inline'; setTimeout(() => confirm.style.display = 'none', 2000); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMPORT SYSTEM — Profile Build + Hourly Diagnostic
+// ═══════════════════════════════════════════════════════════════
+
+const _profileFiles  = {};
+const _hourlyFiles   = {};
+const _hourlyHistory = JSON.parse(localStorage.getItem('ob_hourly_history') || '[]');
+
+const PROFILE_REQUIRED = ['roster','adapt','pit','pst','cst'];
+const HOURLY_REQUIRED  = ['pp','pst','cst','cr','pr'];
+
+const COST_TARGETS_OB = {
+  palletStow:  parseInt(localStorage.getItem('ob_tgt_pst'))  || 10,
+  caseStow:    parseInt(localStorage.getItem('ob_tgt_cst'))  || 70,
+  caseReplen:  parseInt(localStorage.getItem('ob_tgt_cr'))   || 55,
+  palletReplen:parseInt(localStorage.getItem('ob_tgt_pr'))   || 5,
+};
+
+function handleProfileFile(key, file) {
+  if (!file) return;
+  _profileFiles[key] = file;
+  const statEl = document.getElementById(`pstat-${key}`);
+  const dzEl   = document.getElementById(`pdz-${key}`);
+  if (statEl) statEl.textContent = `✓ ${file.name}`;
+  if (dzEl)   dzEl.classList.add('loaded');
+  updateProfileRunBtn();
+}
+
+function handleHourlyFile(key, file) {
+  if (!file) return;
+  _hourlyFiles[key] = file;
+  const statEl = document.getElementById(`hstat-${key}`);
+  const dzEl   = document.getElementById(`hdz-${key}`);
+  if (statEl) statEl.textContent = `✓ ${file.name}`;
+  if (dzEl)   dzEl.classList.add('loaded');
+  updateHourlyRunBtn();
+}
+
+function updateProfileRunBtn() {
+  const ready = PROFILE_REQUIRED.filter(k => _profileFiles[k]).length;
+  document.getElementById('profile-ready-count').textContent = ready;
+  document.getElementById('btn-run-profile-build').disabled = ready < PROFILE_REQUIRED.length;
+  document.getElementById('profile-run-status').textContent =
+    ready >= PROFILE_REQUIRED.length ? 'All required files loaded — ready to build' : `${PROFILE_REQUIRED.length - ready} more required file(s) needed`;
+}
+
+function updateHourlyRunBtn() {
+  const ready = HOURLY_REQUIRED.filter(k => _hourlyFiles[k]).length;
+  document.getElementById('hourly-ready-count').textContent = ready;
+  document.getElementById('btn-run-hourly').disabled = ready < HOURLY_REQUIRED.length;
+  document.getElementById('hourly-run-status').textContent =
+    ready >= HOURLY_REQUIRED.length ? 'Ready to run' : `${HOURLY_REQUIRED.length - ready} more file(s) needed`;
+}
+
+function _parseCSVImport(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  const headers = _parseCSVLineImport(lines[0]);
+  return lines.slice(1).filter(l=>l.trim()).map(l => {
+    const vals = _parseCSVLineImport(l);
+    const obj = {};
+    headers.forEach((h,i) => obj[h.trim()] = (vals[i]||'').trim());
+    return obj;
+  });
+}
+
+function _parseCSVLineImport(line) {
+  const res = []; let cur = ''; let inQ = false;
+  for (let i=0;i<line.length;i++) {
+    if(line[i]==='"'){inQ=!inQ;continue;}
+    if(line[i]===','&&!inQ){res.push(cur);cur='';continue;}
+    cur+=line[i];
+  }
+  res.push(cur);
+  return res;
+}
+
+function runProfileBuild() {
+  const logEl = document.getElementById('profile-build-log');
+  const resEl = document.getElementById('profile-build-results');
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  function log(type, msg) {
+    const colors = {ok:'var(--green)',warn:'var(--amber)',err:'var(--red)',info:'var(--blue)',dim:'var(--muted)'};
+    logEl.innerHTML += `<div style="color:${colors[type]||'var(--muted)'};">${new Date().toLocaleTimeString()} &nbsp; ${msg}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  log('info','▸ Starting profile build...');
+
+  const readers = PROFILE_REQUIRED.map(key => new Promise(resolve => {
+    const file = _profileFiles[key];
+    const reader = new FileReader();
+    reader.onload = e => resolve({ key, text: e.target.result });
+    reader.readAsText(file);
+  }));
+
+  // Also read optional files
+  const optKeys = ['cr','pr'].filter(k => _profileFiles[k]);
+  const optReaders = optKeys.map(key => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => resolve({ key, text: e.target.result });
+    reader.readAsArrayBuffer(_profileFiles[key]); // roster may be xlsx
+  }));
+
+  Promise.all(readers).then(results => {
+    const raw = {};
+    results.forEach(r => raw[r.key] = r.text);
+
+    // Parse ADAPT (skip 8 header rows)
+    log('dim','  Parsing ADAPT (auto-skipping 8 metadata rows)...');
+    const adaptLines = raw['adapt'].split('\n');
+    const adaptHeaderIdx = adaptLines.findIndex(l => l.includes('EMPLOYEE_ID'));
+    const adaptText = adaptLines.slice(adaptHeaderIdx >= 0 ? adaptHeaderIdx : 8).join('\n');
+    const adaptRows = _parseCSVImport(adaptText);
+    const adaptSummary = adaptRows.filter(r => !r['PROCESS_NAME'] || r['PROCESS_NAME'] === '');
+    const adaptDetail  = adaptRows.filter(r => r['PROCESS_NAME'] && r['PROCESS_NAME'] !== '');
+    log('ok', `  ✓ ADAPT — ${adaptSummary.length} summary + ${adaptDetail.length} detail rows`);
+
+    // Build LC + process path maps
+    const lcMap = {}, pathMap = {};
+    adaptDetail.forEach(r => {
+      const id = r['EMPLOYEE_ID'];
+      if (!lcMap[id] && r['LEARNING_CURVE_LEVEL']) lcMap[id] = r['LEARNING_CURVE_LEVEL'];
+      if (!pathMap[id]) pathMap[id] = new Set();
+      if (r['FUNCTION_NAME']) pathMap[id].add(r['FUNCTION_NAME']);
+    });
+
+    // Parse PIT
+    log('dim','  Parsing PIT certifications...');
+    const pitRows = _parseCSVImport(raw['pit']);
+    const rtMap = {}, opMap = {};
+    pitRows.forEach(r => {
+      const id = String(r['Emp ID']||'').trim();
+      if (r['Role']==='Reach Truck') rtMap[id] = r['STATUS'];
+      if (r['Role']==='Order Pick')  opMap[id] = r['STATUS'];
+    });
+    log('ok', `  ✓ PIT — ${Object.keys(rtMap).length} RT, ${Object.keys(opMap).length} OP`);
+
+    // Parse function rollups
+    function parseRollup(text, unitType) {
+      const rows = _parseCSVImport(text);
+      const map = {};
+      rows.filter(r => r['Size']==='Total' && (r['Unit Type']||'').toUpperCase().includes(unitType))
+          .forEach(r => { map[String(r['Employee Id']||'').trim()] = { jph: parseFloat(r['JPH'])||0, uph: parseFloat(r['UPH'])||0 }; });
+      return map;
+    }
+    const pstMap = parseRollup(raw['pst'],'PALLET');
+    const cstMap = parseRollup(raw['cst'],'CASE');
+    log('ok', `  ✓ Rates — Pallet Stow: ${Object.keys(pstMap).length}, Case Stow: ${Object.keys(cstMap).length}`);
+
+    // Parse roster — handle CSV text (xlsx handled separately by existing wizard)
+    log('dim','  Parsing Roster...');
+    const rosterText = raw['roster'];
+    const rosterLines = rosterText.split('\n');
+    const headerIdx = rosterLines.findIndex(l => l.includes('Emp Name') || l.includes('Emp User ID'));
+    const rosterRows = _parseCSVImport(rosterLines.slice(headerIdx >= 0 ? headerIdx : 0).join('\n'));
+    log('ok', `  ✓ Roster — ${rosterRows.length} associates`);
+
+    // Merge profiles
+    log('dim','  Merging on Employee ID → Login fallback...');
+    const obProfiles = JSON.parse(localStorage.getItem('ob_profiles') || '{}');
+    let created = 0, updated = 0, conflicts = [];
+
+    rosterRows.forEach(r => {
+      const empId  = String(r['Emp ID']||'').trim();
+      const login  = String(r['Emp User ID']||'').trim().toLowerCase();
+      const badge  = String(r['Barcode Emp ID']||'').trim();
+      if (!empId) { conflicts.push({ name: r['Emp Name'], reason:'MISSING_EMP_ID' }); return; }
+
+      function tenureLabel(d) {
+        try { const days=(Date.now()-new Date(d))/86400000; if(days<30)return'Less than 1 month'; if(days<90)return'1-3 months'; if(days<180)return'3-6 months'; if(days<365)return'6-12 months'; if(days<730)return'1-2 years'; if(days<1460)return'2-4 years'; return'4+ years'; } catch(e){return'Unknown';}
+      }
+
+      const profile = {
+        empId, login, barcodeId: badge,
+        name: r['Emp Name']||'', jobTitle: r['Job Title']||'',
+        jobLevel: r['Job Level']||'', empClass: r['Emp Class']||'',
+        ftPt: r['FT/PT']||'', shiftPattern: r['Shift Pattern']||'',
+        homeArea: r['FCLM Area']||'', supervisor: (r['Supervisor Name']||'').trim(),
+        department: r['Department Name']||'',
+        hireDate: r['Last Hire Date']||'',
+        tenureDays: Math.floor((Date.now()-new Date(r['Last Hire Date']))/86400000)||null,
+        tenureLabel: tenureLabel(r['Last Hire Date']),
+        lcLevel: lcMap[empId]||null,
+        processPaths: pathMap[empId]?[...pathMap[empId]].join(' | '):'',
+        rtStatus: rtMap[empId]||null, opStatus: opMap[empId]||null,
+        palletStow: pstMap[empId]||null, caseStow: cstMap[empId]||null,
+        canPalletStow: !!pstMap[empId], canCaseStow: !!cstMap[empId],
+        canReachTruck: rtMap[empId]==='ACTIVE', canOrderPick: opMap[empId]==='ACTIVE',
+        lastImportTs: new Date().toISOString(),
+      };
+
+      if (obProfiles[empId]) updated++; else created++;
+      obProfiles[empId] = profile;
+    });
+
+    try { localStorage.setItem('ob_profiles', JSON.stringify(obProfiles)); } catch(e) { log('warn','  ⚠ localStorage quota — profiles may not all be saved'); }
+    log('ok', `  ✓ ${created} created, ${updated} updated, ${conflicts.length} conflicts`);
+    log('ok', `▸ Done — ${Object.keys(obProfiles).length} total profiles in system`);
+
+    resEl.style.display = 'block';
+    resEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px;">
+        <div style="background:var(--green-dim);border:1px solid var(--green);padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">CREATED</div><div style="font-size:22px;color:var(--green);font-weight:700;">${created}</div>
+        </div>
+        <div style="background:var(--amber-dim);border:1px solid var(--amber);padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">UPDATED</div><div style="font-size:22px;color:var(--amber);font-weight:700;">${updated}</div>
+        </div>
+        <div style="background:var(--blue-dim);border:1px solid var(--blue);padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">TOTAL IN SYSTEM</div><div style="font-size:22px;color:var(--blue);font-weight:700;">${Object.keys(obProfiles).length}</div>
+        </div>
+        ${conflicts.length?`<div style="background:var(--red-dim);border:1px solid var(--red);padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">CONFLICTS</div><div style="font-size:22px;color:var(--red);font-weight:700;">${conflicts.length}</div>
+        </div>`:''}
+      </div>
+    `;
+  }).catch(err => { log('err', `✗ Build failed: ${err.message}`); });
+}
+
+function runHourlyDiagnostic() {
+  const logEl = document.getElementById('hourly-build-log');
+  const resEl = document.getElementById('hourly-results');
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  function log(type, msg) {
+    const colors = {ok:'var(--green)',warn:'var(--amber)',err:'var(--red)',info:'var(--blue)',dim:'var(--muted)'};
+    logEl.innerHTML += `<div style="color:${colors[type]||'var(--muted)'};">${new Date().toLocaleTimeString()} &nbsp; ${msg}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  const now = new Date();
+  const hourLabel = now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+  document.getElementById('hourly-current-hour').textContent = hourLabel;
+  log('info',`▸ Hourly diagnostic — ${hourLabel}`);
+
+  const readers = HOURLY_REQUIRED.map(key => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => resolve({key, text: e.target.result});
+    reader.readAsText(_hourlyFiles[key]);
+  }));
+
+  Promise.all(readers).then(results => {
+    const raw = {};
+    results.forEach(r => raw[r.key] = r.text);
+
+    // Process path
+    const ppRows = _parseCSVImport(raw['pp']);
+    log('ok', `  ✓ Process Path — ${ppRows.length} rows`);
+
+    // Parse rollups
+    function parseHourly(text, unitType, metric) {
+      return _parseCSVImport(text)
+        .filter(r => r['Size']==='Total' && (r['Unit Type']||'').toUpperCase().includes(unitType))
+        .map(r => ({
+          empId: String(r['Employee Id']||'').trim(),
+          name: r['Name']||'',
+          val: parseFloat(r[metric==='JPH'?'JPH':'UPH'])||0,
+          hours: parseFloat(r['Paid Hours-Total(function,employee)'])||0,
+        })).filter(r=>r.val>0);
+    }
+
+    const pstH = parseHourly(raw['pst'],'PALLET','UPH');
+    const cstH = parseHourly(raw['cst'],'CASE','UPH');
+    const crH  = parseHourly(raw['cr'],'CASE','JPH');
+    const prH  = parseHourly(raw['pr'],'PALLET','JPH');
+
+    const allRates = [
+      ...pstH.map(r=>({...r,func:'Pallet Stow',target:COST_TARGETS_OB.palletStow})),
+      ...cstH.map(r=>({...r,func:'Case Stow',target:COST_TARGETS_OB.caseStow})),
+      ...crH.map(r=>({...r,func:'Case Replen',target:COST_TARGETS_OB.caseReplen})),
+      ...prH.map(r=>({...r,func:'Pallet Replen',target:COST_TARGETS_OB.palletReplen})),
+    ].sort((a,b)=>(a.val/a.target)-(b.val/b.target));
+
+    const avg = arr => arr.length ? arr.reduce((s,r)=>s+r.val,0)/arr.length : 0;
+    const avgPST = avg(pstH), avgCST = avg(cstH);
+    const pstPct = COST_TARGETS_OB.palletStow ? (avgPST/COST_TARGETS_OB.palletStow*100) : 0;
+    const cstPct = COST_TARGETS_OB.caseStow   ? (avgCST/COST_TARGETS_OB.caseStow*100)   : 0;
+    const under  = allRates.filter(r=>r.val/r.target<0.85).length;
+
+    log('ok', `  ✓ Pallet Stow avg: ${avgPST.toFixed(1)} UPH (${pstPct.toFixed(0)}% to target)`);
+    log('ok', `  ✓ Case Stow avg: ${avgCST.toFixed(1)} UPH (${cstPct.toFixed(0)}% to target)`);
+    if(under) log('warn',`  ⚠ ${under} associates below 85% of target`);
+
+    const snap = { time:hourLabel, ts:Date.now(), avgPST, avgCST, pstPct, cstPct, under };
+    _hourlyHistory.push(snap);
+    try { localStorage.setItem('ob_hourly_history', JSON.stringify(_hourlyHistory.slice(-12))); } catch(e){}
+
+    log('ok',`▸ Diagnostic complete — Hour ${_hourlyHistory.length} recorded`);
+
+    const obProfiles = JSON.parse(localStorage.getItem('ob_profiles')||'{}');
+
+    resEl.style.display = 'block';
+    resEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:16px;">
+        <div style="background:var(--s2);border-top:2px solid ${pstPct>=100?'var(--green)':pstPct>=85?'var(--amber)':'var(--red)'};padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">PALLET STOW AVG</div>
+          <div style="font-size:22px;font-weight:700;color:${pstPct>=100?'var(--green)':pstPct>=85?'var(--amber)':'var(--red)'};">${avgPST.toFixed(1)}</div>
+          <div style="font-size:9px;color:var(--muted);">UPH · target ${COST_TARGETS_OB.palletStow}</div>
+        </div>
+        <div style="background:var(--s2);border-top:2px solid ${cstPct>=100?'var(--green)':cstPct>=85?'var(--amber)':'var(--red)'};padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">CASE STOW AVG</div>
+          <div style="font-size:22px;font-weight:700;color:${cstPct>=100?'var(--green)':cstPct>=85?'var(--amber)':'var(--red)'};">${avgCST.toFixed(1)}</div>
+          <div style="font-size:9px;color:var(--muted);">UPH · target ${COST_TARGETS_OB.caseStow}</div>
+        </div>
+        <div style="background:var(--s2);border-top:2px solid var(--blue);padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">HOUR</div>
+          <div style="font-size:22px;font-weight:700;color:var(--blue);">${_hourlyHistory.length}</div>
+          <div style="font-size:9px;color:var(--muted);">recorded this shift</div>
+        </div>
+        <div style="background:var(--s2);border-top:2px solid ${under===0?'var(--green)':'var(--red)'};padding:10px;font-family:var(--mono);">
+          <div style="font-size:9px;color:var(--muted);">UNDER TARGET</div>
+          <div style="font-size:22px;font-weight:700;color:${under===0?'var(--green)':'var(--red)'};">${under}</div>
+          <div style="font-size:9px;color:var(--muted);">associates &lt;85%</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--amber);font-family:var(--mono);letter-spacing:0.1em;margin-bottom:8px;">HOURLY TREND</div>
+      <div style="margin-bottom:16px;">
+        ${_hourlyHistory.map((h,i)=>{
+          const w=Math.min(h.pstPct,100);
+          const cl=h.pstPct>=100?'var(--green)':h.pstPct>=85?'var(--amber)':'var(--red)';
+          return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:10px;">
+            <span style="color:var(--muted);min-width:80px;">HR ${i+1} · ${h.time}</span>
+            <div style="flex:1;background:var(--s3);height:5px;"><div style="width:${w}%;height:100%;background:${cl};"></div></div>
+            <span style="color:${cl};min-width:40px;text-align:right;">${h.pstPct.toFixed(0)}%</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--amber);font-family:var(--mono);letter-spacing:0.1em;margin-bottom:8px;">RATE BREAKDOWN — WORST FIRST</div>
+      <table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;">
+        <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);">
+          <th style="padding:5px 8px;text-align:left;">Associate</th>
+          <th style="padding:5px 8px;text-align:left;">Function</th>
+          <th style="padding:5px 8px;text-align:right;">Rate</th>
+          <th style="padding:5px 8px;text-align:right;">Target</th>
+          <th style="padding:5px 8px;text-align:right;">% to Target</th>
+          <th style="padding:5px 8px;text-align:left;">LC</th>
+          <th style="padding:5px 8px;text-align:left;">Flag</th>
+        </tr></thead>
+        <tbody>
+          ${allRates.map(r => {
+            const pct = r.target>0?(r.val/r.target*100):0;
+            const cl = pct>=100?'var(--green)':pct>=85?'var(--amber)':'var(--red)';
+            const p = obProfiles[r.empId]||{};
+            const lc = p.lcLevel||'—';
+            const isLC5under = (lc.includes('5')||lc.includes('Level 5')) && pct<100;
+            return `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:5px 8px;">${r.name}</td>
+              <td style="padding:5px 8px;color:var(--muted);">${r.func}</td>
+              <td style="padding:5px 8px;text-align:right;">${r.val.toFixed(1)}</td>
+              <td style="padding:5px 8px;text-align:right;color:var(--muted);">${r.target}</td>
+              <td style="padding:5px 8px;text-align:right;color:${cl};font-weight:700;">${pct.toFixed(0)}%</td>
+              <td style="padding:5px 8px;color:var(--muted);">${lc}</td>
+              <td style="padding:5px 8px;">${isLC5under?'<span style="background:var(--red-dim);border:1px solid var(--red);color:var(--red);font-size:9px;padding:1px 5px;">LC5 WRITE-UP RISK</span>':pct<85?'<span style="background:var(--amber-dim);border:1px solid var(--amber);color:var(--amber);font-size:9px;padding:1px 5px;">BELOW TARGET</span>':'<span style="background:var(--green-dim);border:1px solid var(--green);color:var(--green);font-size:9px;padding:1px 5px;">ON TRACK</span>'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }).catch(err => { log('err', `✗ Diagnostic failed: ${err.message}`); });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// QZZ1 LABOR BOARD ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+// ── FLOOR DEFINITION ────────────────────────────────────────────
+const QZZ1_FLOOR = {
+  dock: {
+    label: 'Inbound Dock',
+    color: 'var(--muted)',
+    slots: [
+      { id:'ft-unload-1',  role:'FT Unload',    count:1, cert:'rt'   },
+      { id:'ft-unload-2',  role:'FT Unload',    count:1, cert:'rt'   },
+      { id:'clamp-1',      role:'Clamp',        count:1, cert:'rt'   },
+      { id:'clamp-2',      role:'Clamp',        count:1, cert:'rt'   },
+      { id:'tdr-1',        role:'TDR',          count:1, cert:null   },
+      { id:'shipclerk-1',  role:'ShipClerk',    count:1, cert:null   },
+      { id:'waterspider-1',role:'Waterspider',  count:1, cert:null   },
+      { id:'gatekeeper-1', role:'Gatekeeper',   count:1, cert:null   },
+    ],
+  },
+  pid: {
+    label: 'PID / OP Cages',
+    color: 'var(--purple,#a78bfa)',
+    slots: [
+      { id:'pid-throw-1',  role:'Truck Line Throw', count:1, cert:null },
+      { id:'pid-throw-2',  role:'Truck Line Throw', count:1, cert:null },
+      { id:'pid-throw-3',  role:'Line 2 Throw',     count:1, cert:null },
+      { id:'pid-throw-4',  role:'Line 2 Throw',     count:1, cert:null },
+      { id:'pid-eaches-1', role:'Eaches',            count:1, cert:null },
+      { id:'pid-eaches-2', role:'Eaches',            count:1, cert:null },
+      { id:'pid-eaches-3', role:'Eaches',            count:1, cert:null },
+      { id:'pid-idrt-1',   role:'IDRT',              count:1, cert:'rt' },
+      { id:'pid-idrt-2',   role:'IDRT',              count:1, cert:'rt' },
+      { id:'pid-linepush-1',role:'Line Pusher',      count:1, cert:null },
+    ],
+  },
+  psZone: {
+    label: 'Problem Solve Zone',
+    color: 'var(--red)',
+    buffers: [161,162,163],
+    slots: [
+      { id:'ps-zone-1', role:'Problem Solver', count:1, cert:null },
+      { id:'ps-zone-2', role:'Problem Solver', count:1, cert:null },
+      { id:'ps-zone-3', role:'Problem Solver', count:1, cert:null },
+      { id:'ps-epj-1',  role:'EPJ',            count:1, cert:'epj' },
+      { id:'ps-epj-2',  role:'EPJ',            count:1, cert:'epj' },
+    ],
+  },
+  teams: [
+    { id:'A1', label:'Team A1', zone:'A', buffers:[137,138,139], color:'var(--green)'  },
+    { id:'A2', label:'Team A2', zone:'A', buffers:[140,141,142], color:'var(--green)'  },
+    { id:'B1', label:'Team B1', zone:'B', buffers:[145,146,147], color:'var(--blue)'   },
+    { id:'B2', label:'Team B2', zone:'B', buffers:[148,149],     color:'var(--blue)'   },
+    { id:'C1', label:'Team C1', zone:'C', buffers:[151,152,153], color:'var(--amber)'  },
+    { id:'C2', label:'Team C2', zone:'C', buffers:[154,155,156], color:'var(--amber)'  },
+    { id:'D1', label:'Team D1', zone:'D', buffers:[158,159,160], color:'var(--yellow)' },
+  ],
+};
+
+// Team slot template — positions per 3-buffer team
+function teamSlots(teamId) {
+  return [
+    { id:`${teamId}-rcv-1`,  role:'Receiver',       cert:null  },
+    { id:`${teamId}-rcv-2`,  role:'Receiver',       cert:null  },
+    { id:`${teamId}-aud-1`,  role:'Pallet Auditor', cert:null  },
+    { id:`${teamId}-aud-2`,  role:'Pallet Auditor', cert:null  },
+    { id:`${teamId}-dst-1`,  role:'Downstacker',    cert:null  },
+    { id:`${teamId}-dst-2`,  role:'Downstacker',    cert:null  },
+    { id:`${teamId}-epj-1`,  role:'EPJ',            cert:'epj' },
+    { id:`${teamId}-epj-2`,  role:'EPJ',            cert:'epj' },
+    { id:`${teamId}-ps-1`,   role:'Problem Solver', cert:null  },
+    { id:`${teamId}-ft-1`,   role:'FT/Clamp',       cert:'rt'  },
+  ];
+}
+
+// ── STATE ────────────────────────────────────────────────────────
+let lbScannedIn   = JSON.parse(localStorage.getItem('ob_lb_scanned') || '[]');
+let lbAssignments = JSON.parse(localStorage.getItem('ob_lb_assignments') || '{}');
+// assignments: { slotId: { empId, name, login, barcodeId, lc, rtStatus, opStatus } }
+
+function lbSave() {
+  localStorage.setItem('ob_lb_scanned',     JSON.stringify(lbScannedIn));
+  localStorage.setItem('ob_lb_assignments', JSON.stringify(lbAssignments));
+}
+
+// ── SCAN IN ──────────────────────────────────────────────────────
+let _lbScanTimer = null;
+
+function lbOpenScanIn() {
+  const panel = document.getElementById('lb-scan-panel');
+  if (panel) { panel.style.display = 'block'; document.getElementById('lb-scan-input')?.focus(); }
+}
+function lbCloseScanIn() {
+  const panel = document.getElementById('lb-scan-panel');
+  if (panel) panel.style.display = 'none';
+}
+function lbClearScanInput() {
+  const inp = document.getElementById('lb-scan-input');
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+
+function lbScanDebounce(val) {
+  clearTimeout(_lbScanTimer);
+  if (!val || val.length < 3) return;
+  _lbScanTimer = setTimeout(() => lbProcessScan(val), 300);
+}
+
+function lbProcessScan(raw) {
+  const inp = document.getElementById('lb-scan-input');
+  const resultEl = document.getElementById('lb-scan-result');
+  const query = raw.trim().toLowerCase();
+
+  // Search ob_profiles first (imported profiles)
+  const obProfiles = JSON.parse(localStorage.getItem('ob_profiles') || '{}');
+  let profile = Object.values(obProfiles).find(p =>
+    String(p.barcodeId || '').trim() === query ||
+    String(p.barcodeId || '').trim() === raw.trim() ||
+    (p.login || '').toLowerCase() === query ||
+    String(p.empId || '').trim() === raw.trim()
+  );
+
+  // Fallback: search v1 associates array
+  if (!profile && typeof associates !== 'undefined') {
+    const match = associates.find(a =>
+      (a.badgeId || '').toLowerCase() === query ||
+      (a.login || a.employeeNumberNorm || '').toLowerCase() === query
+    );
+    if (match) {
+      profile = {
+        empId: match.employeeNumberNorm || match.id,
+        name: match.name || match.displayCode,
+        login: match.login || match.employeeNumberNorm,
+        barcodeId: match.badgeId,
+        lcLevel: match.lc ? `Level ${match.lc}` : null,
+        rtStatus: (match.certPaths||[]).includes('rt') ? 'ACTIVE' : null,
+        opStatus: (match.certPaths||[]).includes('op') ? 'ACTIVE' : null,
+        jobLevel: match.shiftCode,
+      };
+    }
+  }
+
+  if (!profile) {
+    if (resultEl) { resultEl.textContent = `✗ "${raw}" — not found in profiles. Add manually in Associates tab.`; resultEl.style.color = 'var(--red)'; }
+    if (inp) { inp.value = ''; inp.focus(); }
+    return;
+  }
+
+  // Check if already scanned
+  const alreadyIn = lbScannedIn.find(s => s.empId === profile.empId);
+  if (alreadyIn) {
+    if (resultEl) { resultEl.textContent = `↻ ${profile.name} already scanned in.`; resultEl.style.color = 'var(--amber)'; }
+    if (inp) { inp.value = ''; inp.focus(); }
+    return;
+  }
+
+  // Add to scanned list
+  lbScannedIn.push({
+    empId:    profile.empId,
+    name:     profile.name || '—',
+    login:    profile.login || '—',
+    barcodeId:profile.barcodeId || '—',
+    lcLevel:  profile.lcLevel || '—',
+    rtStatus: profile.rtStatus || null,
+    opStatus: profile.opStatus || null,
+    jobLevel: profile.jobLevel || '—',
+    scannedAt: Date.now(),
+  });
+
+  lbSave();
+  if (resultEl) { resultEl.textContent = `✓ ${profile.name} scanned in`; resultEl.style.color = 'var(--green)'; }
+  if (inp) { inp.value = ''; inp.focus(); }
+  lbRenderScannedList();
+  lbRenderBoard();
+  lbUpdateCounts();
+}
+
+function lbRenderScannedList() {
+  const el = document.getElementById('lb-scanned-list');
+  if (!el) return;
+  if (!lbScannedIn.length) { el.innerHTML = '<div style="color:var(--muted);font-size:11px;font-family:var(--mono);">No associates scanned in yet.</div>'; return; }
+  el.innerHTML = lbScannedIn.map(a => {
+    const assigned = Object.values(lbAssignments).find(x => x.empId === a.empId);
+    const rtTag = a.rtStatus === 'ACTIVE' ? '<span style="color:var(--green);font-size:8px;font-family:var(--mono);"> RT</span>' : '';
+    const opTag = a.opStatus === 'ACTIVE' ? '<span style="color:var(--blue);font-size:8px;font-family:var(--mono);"> OP</span>' : '';
+    return `<div style="background:var(--s2);border:1px solid ${assigned?'var(--green)':'var(--border)'};padding:7px 9px;font-family:var(--mono);font-size:10px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="color:var(--text);font-size:11px;">${a.name}</div>
+        <div style="color:var(--muted);font-size:9px;">${a.lcLevel || '—'} ${rtTag}${opTag}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="color:${assigned?'var(--green)':'var(--amber)'};font-size:9px;">${assigned ? assigned.role : 'Unassigned'}</div>
+        <button onclick="lbRemoveScanned('${a.empId}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:9px;">remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function lbRemoveScanned(empId) {
+  lbScannedIn = lbScannedIn.filter(a => a.empId !== empId);
+  // Remove any assignment for this person
+  Object.keys(lbAssignments).forEach(slot => {
+    if (lbAssignments[slot]?.empId === empId) delete lbAssignments[slot];
+  });
+  lbSave();
+  lbRenderScannedList();
+  lbRenderBoard();
+  lbUpdateCounts();
+}
+
+// ── AUTO-ASSIGN ──────────────────────────────────────────────────
+function lbAutoAssign() {
+  if (!lbScannedIn.length) {
+    const banner = document.getElementById('lb-autoassign-banner');
+    if (banner) { banner.style.display='block'; banner.textContent='⚠ No associates scanned in yet. Open Scan In and scan badges first.'; }
+    return;
+  }
+
+  // Clear existing assignments
+  lbAssignments = {};
+
+  // Get WIP to know which teams need staffing
+  const activeTeamIds = new Set();
+  wipZones.forEach(z => {
+    const b = parseInt(z.buffer);
+    if (!b || (!z.palletsToReceive && !z.palletsToTransport)) return;
+    QZZ1_FLOOR.teams.forEach(t => {
+      if (t.buffers.includes(b)) activeTeamIds.add(t.id);
+    });
+  });
+
+  // Build priority slot list
+  const prioritySlots = [];
+
+  // Always staff dock first
+  QZZ1_FLOOR.dock.slots.forEach(s => prioritySlots.push({ ...s, section:'dock', priority:1 }));
+  // PID next
+  QZZ1_FLOOR.pid.slots.forEach(s => prioritySlots.push({ ...s, section:'pid', priority:2 }));
+  // PS zone
+  QZZ1_FLOOR.psZone.slots.forEach(s => prioritySlots.push({ ...s, section:'ps', priority:3 }));
+  // Active receiving teams (by WIP priority — most pallets first)
+  const teamsByWIP = [...QZZ1_FLOOR.teams].sort((a, b) => {
+    const aWIP = wipZones.filter(z => a.buffers.includes(parseInt(z.buffer))).reduce((s,z) => s + (z.palletsToReceive||0) + (z.palletsToTransport||0), 0);
+    const bWIP = wipZones.filter(z => b.buffers.includes(parseInt(z.buffer))).reduce((s,z) => s + (z.palletsToReceive||0) + (z.palletsToTransport||0), 0);
+    return bWIP - aWIP;
+  });
+
+  teamsByWIP.forEach((team, ti) => {
+    teamSlots(team.id).forEach(s => prioritySlots.push({ ...s, section:'team', teamId:team.id, priority:4 + ti }));
+  });
+
+  // Pool of available associates — sort by: RT cert, LC level desc
+  let pool = [...lbScannedIn].sort((a, b) => {
+    const lcA = parseInt((a.lcLevel||'').replace(/\D/g,'')) || 0;
+    const lcB = parseInt((b.lcLevel||'').replace(/\D/g,'')) || 0;
+    return lcB - lcA;
+  });
+
+  // Assign
+  prioritySlots.forEach(slot => {
+    if (!pool.length) return;
+    // Find best match for this slot
+    let idx = -1;
+    if (slot.cert === 'rt') {
+      idx = pool.findIndex(a => a.rtStatus === 'ACTIVE');
+    } else if (slot.cert === 'epj') {
+      // EPJ: either RT or just anyone available (EPJ cert tracked separately)
+      idx = pool.findIndex(a => a.rtStatus === 'ACTIVE');
+      if (idx === -1) idx = 0; // fallback to first available
+    } else if (slot.cert === 'op') {
+      idx = pool.findIndex(a => a.opStatus === 'ACTIVE');
+    } else {
+      idx = 0; // any associate
+    }
+    if (idx === -1) idx = 0; // fallback
+
+    const associate = pool.splice(idx, 1)[0];
+    lbAssignments[slot.id] = { ...associate, role: slot.role, slotId: slot.id, section: slot.section, teamId: slot.teamId || null };
+  });
+
+  lbSave();
+  lbRenderBoard();
+  lbRenderScannedList();
+  lbUpdateCounts();
+
+  const remaining = pool.length;
+  const assigned  = Object.keys(lbAssignments).length;
+  const banner = document.getElementById('lb-autoassign-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    banner.textContent = `✓ Auto-assign complete — ${assigned} associates placed${remaining > 0 ? ` · ${remaining} unassigned (extra headcount — consider labor share or BTO)` : ' · All associates assigned'}.`;
+    banner.className = remaining > 0 ? 'alert a-amber mb2' : 'alert a-green mb2';
+  }
+}
+
+// ── ROTATION ─────────────────────────────────────────────────────
+function lbRotate() {
+  if (!Object.keys(lbAssignments).length) return;
+  // Within each team: rotate EPJ → Downstacker → Receiver → Auditor → EPJ
+  // Cross-team: randomly swap one person per team who can do both roles
+  const rotateOrder = ['Receiver','Pallet Auditor','Downstacker','EPJ'];
+
+  QZZ1_FLOOR.teams.forEach(team => {
+    const teamAssigns = Object.entries(lbAssignments)
+      .filter(([,a]) => a.teamId === team.id)
+      .map(([slotId, a]) => ({ slotId, ...a }));
+
+    if (teamAssigns.length < 2) return;
+
+    // Group by role
+    const byRole = {};
+    teamAssigns.forEach(a => {
+      if (!byRole[a.role]) byRole[a.role] = [];
+      byRole[a.role].push(a);
+    });
+
+    // Cycle: each role's people move to next role slot
+    const rolesCycle = rotateOrder.filter(r => byRole[r]);
+    if (rolesCycle.length < 2) return;
+
+    const people = rolesCycle.map(r => byRole[r][0]).filter(Boolean);
+    const slots  = rolesCycle.map(r => (byRole[r][0] || {}).slotId).filter(Boolean);
+
+    // Rotate: person[0] → slot[1], person[1] → slot[2], ..., last → slot[0]
+    people.forEach((person, i) => {
+      const nextSlot = slots[(i + 1) % slots.length];
+      if (nextSlot && lbAssignments[nextSlot]) {
+        lbAssignments[nextSlot] = { ...person, slotId: nextSlot, role: lbAssignments[nextSlot].role, teamId: team.id };
+      }
+    });
+  });
+
+  lbSave();
+  lbRenderBoard();
+
+  const banner = document.getElementById('lb-autoassign-banner');
+  if (banner) {
+    banner.style.display = 'block';
+    banner.textContent = '🔄 Rotation applied — associates cycled within each team. Review and adjust as needed.';
+    banner.className = 'alert a-amber mb2';
+  }
+}
+
+// ── RENDER BOARD ─────────────────────────────────────────────────
+function lbRenderBoard() {
+  lbRenderSection('lb-dock-slots', QZZ1_FLOOR.dock.slots, 'dock');
+  lbRenderSection('lb-pid-slots',  QZZ1_FLOOR.pid.slots,  'pid');
+  lbRenderSection('lb-ps-slots',   QZZ1_FLOOR.psZone.slots,'ps');
+  lbRenderTeams();
+  lbRenderUnassigned();
+  lbRenderHCTracker();
+}
+
+function lbRenderSection(containerId, slots, section) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = slots.map(slot => lbSlotCard(slot, section)).join('');
+}
+
+function lbSlotCard(slot, section, teamId) {
+  const assigned = lbAssignments[slot.id];
+  const isEmpty  = !assigned;
+  const certReq  = slot.cert ? `<span style="font-size:8px;color:var(--muted);font-family:var(--mono);">[${slot.cert.toUpperCase()}]</span>` : '';
+  const lcTag    = assigned?.lcLevel ? `<span style="font-size:8px;font-family:var(--mono);color:var(--muted);">${assigned.lcLevel}</span>` : '';
+  const rtTag    = assigned?.rtStatus === 'ACTIVE' ? '<span style="font-size:8px;color:var(--green);font-family:var(--mono);"> RT✓</span>' : '';
+
+  return `<div style="background:var(--s${isEmpty?'3':'2'});border:1px solid ${isEmpty?'var(--border)':'var(--green)'};padding:8px;min-height:58px;cursor:pointer;transition:all 0.15s;"
+    onclick="lbSlotClick('${slot.id}','${slot.role}','${slot.cert||''}','${teamId||''}')"
+    title="Click to manually assign">
+    <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px;">${slot.role} ${certReq}</div>
+    ${isEmpty
+      ? `<div style="color:var(--muted);font-size:10px;font-family:var(--mono);">— empty —</div>`
+      : `<div style="font-size:11px;color:var(--text);">${assigned.name}</div>
+         <div style="display:flex;align-items:center;gap:4px;margin-top:2px;">${lcTag}${rtTag}</div>`
+    }
+    ${assigned ? `<button onclick="event.stopPropagation();lbClearSlot('${slot.id}')" style="margin-top:4px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:8px;font-family:var(--mono);">✕ clear</button>` : ''}
+  </div>`;
+}
+
+function lbRenderTeams() {
+  const grid = document.getElementById('lb-teams-grid');
+  if (!grid) return;
+
+  // Get WIP data per team
+  grid.innerHTML = QZZ1_FLOOR.teams.map(team => {
+    const slots = teamSlots(team.id);
+    const filledCount = slots.filter(s => lbAssignments[s.id]).length;
+    const teamWIP = wipZones.filter(z => team.buffers.includes(parseInt(z.buffer)));
+    const totalReceive   = teamWIP.reduce((s,z)=>s+(z.palletsToReceive||0),0);
+    const totalTransport = teamWIP.reduce((s,z)=>s+(z.palletsToTransport||0),0);
+
+    // CW routing for this team's buffers
+    const cwRoutes = team.buffers.map(b => {
+      const route = getOptimalCW(b);
+      if (!route || !route.cw) return '';
+      const color = route.isOptimal?'var(--green)':route.longHaul?'var(--red)':'var(--amber)';
+      return `<span style="font-family:var(--mono);font-size:9px;color:${color};">B${b}→CW${route.cw}</span>`;
+    }).filter(Boolean).join(' &nbsp;');
+
+    return `<div class="card" style="border-left:3px solid ${team.color};">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="color:${team.color};">${team.label}</span>
+        <div style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;">
+          <span style="color:var(--muted);">Buf ${team.buffers.join(', ')}</span>
+          <span style="color:var(--green);">${filledCount}/${slots.length} filled</span>
+        </div>
+      </div>
+      ${totalReceive || totalTransport ? `<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px;display:flex;gap:12px;">
+        ${totalReceive?`<span>📦 ${totalReceive} to receive</span>`:''}
+        ${totalTransport?`<span>🚜 ${totalTransport} to transport</span>`:''}
+        ${cwRoutes?`<span>${cwRoutes}</span>`:''}
+      </div>` : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;">
+        ${slots.map(s => lbSlotCard(s, 'team', team.id)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function lbRenderUnassigned() {
+  const card = document.getElementById('lb-unassigned-card');
+  const list = document.getElementById('lb-unassigned-list');
+  if (!card || !list) return;
+
+  const assignedEmpIds = new Set(Object.values(lbAssignments).map(a => a.empId));
+  const unassigned = lbScannedIn.filter(a => !assignedEmpIds.has(a.empId));
+
+  card.style.display = unassigned.length ? 'block' : 'none';
+  list.innerHTML = unassigned.map(a =>
+    `<div style="background:var(--s2);border:1px solid var(--red);padding:6px 10px;font-family:var(--mono);font-size:10px;">
+      <div>${a.name}</div>
+      <div style="color:var(--muted);font-size:9px;">${a.lcLevel || '—'} ${a.rtStatus==='ACTIVE'?'RT ':''}</div>
+    </div>`
+  ).join('');
+}
+
+function lbRenderHCTracker() {
+  const leftEl  = document.getElementById('lb-hc-left');
+  const rightEl = document.getElementById('lb-hc-right');
+  if (!leftEl || !rightEl) return;
+
+  const countRole = role => Object.values(lbAssignments).filter(a => a.role === role).length;
+
+  const leftRows = [
+    ['Truck Throwers',  countRole('FT Unload') + countRole('Clamp')],
+    ['Receivers',       countRole('Receiver')],
+    ['Downstackers',    countRole('Downstacker')],
+    ['Pallet Auditors', countRole('Pallet Auditor')],
+    ['EPJ',             countRole('EPJ')],
+    ['Waterspiders',    countRole('Waterspider')],
+    ['IDRT',            countRole('IDRT')],
+    ['Line Pushers',    countRole('Line Pusher')],
+  ];
+  const rightRows = [
+    ['Problem Solvers', countRole('Problem Solver')],
+    ['TDR',            countRole('TDR')],
+    ['ShipClerk',      countRole('ShipClerk')],
+    ['Gatekeeper',     countRole('Gatekeeper')],
+    ['FT/Clamp',       countRole('FT/Clamp')],
+    ['Eaches',         countRole('Eaches')],
+    ['Truck Line Throw',countRole('Truck Line Throw') + countRole('Line 2 Throw')],
+  ];
+
+  const renderRows = rows => rows.map(([label, count]) =>
+    `<span style="color:var(--muted);">${label}</span><span style="color:${count>0?'var(--text)':'var(--muted)'};">${count}</span>`
+  ).join('');
+
+  leftEl.innerHTML  = renderRows(leftRows);
+  rightEl.innerHTML = renderRows(rightRows);
+
+  const total = Object.keys(lbAssignments).length;
+  const learn = lbScannedIn.filter(a => (parseInt((a.lcLevel||'').replace(/\D/g,''))||0) <= 2).length;
+  const shares = lbScannedIn.filter(a => a.isLaborShare).length;
+
+  const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  setT('lb-total-ib',    total);
+  setT('lb-total-learn', learn);
+  setT('lb-total-share', shares);
+}
+
+function lbUpdateCounts() {
+  const assigned   = new Set(Object.values(lbAssignments).map(a=>a.empId)).size;
+  const unassigned = lbScannedIn.length - assigned;
+  const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  setT('lb-scanned-count',    lbScannedIn.length);
+  setT('lb-assigned-count',   assigned);
+  setT('lb-unassigned-count', unassigned);
+
+  // HQ summary cards
+  const countRole = role => Object.values(lbAssignments).filter(a=>a.role===role).length;
+  setT('lb-hc-total',     Object.keys(lbAssignments).length);
+  setT('lb-hc-receiving', countRole('Receiver') + countRole('Pallet Auditor'));
+  setT('lb-hc-epj',       countRole('EPJ'));
+  setT('lb-hc-ps',        countRole('Problem Solver'));
+  setT('lb-hc-pid',       countRole('Eaches') + countRole('IDRT') + countRole('Truck Line Throw') + countRole('Line 2 Throw') + countRole('Line Pusher'));
+}
+
+// ── SLOT CLICK (manual assign) ────────────────────────────────────
+function lbSlotClick(slotId, role, cert, teamId) {
+  // Simple: show a small picker of unassigned scanned-in associates
+  const assignedEmpIds = new Set(Object.values(lbAssignments).map(a=>a.empId));
+  let pool = lbScannedIn.filter(a => !assignedEmpIds.has(a.empId));
+
+  // Filter by cert if required
+  if (cert === 'rt') pool = pool.filter(a => a.rtStatus === 'ACTIVE').concat(pool.filter(a => a.rtStatus !== 'ACTIVE'));
+  if (cert === 'op') pool = pool.filter(a => a.opStatus === 'ACTIVE').concat(pool.filter(a => a.opStatus !== 'ACTIVE'));
+
+  // Already assigned? Offer to clear or reassign
+  const current = lbAssignments[slotId];
+  if (current) {
+    if (confirm(`${current.name} is in this slot.\n\nOK = Clear slot\nCancel = Keep`)) {
+      lbClearSlot(slotId);
+    }
+    return;
+  }
+
+  if (!pool.length) { alert('No unassigned associates available. Scan in more associates or clear another slot.'); return; }
+
+  const choice = prompt(`Assign to ${role}:\n\n${pool.map((a,i)=>`${i+1}. ${a.name} (${a.lcLevel||'?'})${a.rtStatus==='ACTIVE'?' RT':''}`).join('\n')}\n\nEnter number:`);
+  const idx = parseInt(choice) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= pool.length) return;
+
+  const associate = pool[idx];
+  lbAssignments[slotId] = { ...associate, role, slotId, teamId: teamId || null };
+  lbSave();
+  lbRenderBoard();
+  lbRenderScannedList();
+  lbUpdateCounts();
+}
+
+function lbClearSlot(slotId) {
+  delete lbAssignments[slotId];
+  lbSave();
+  lbRenderBoard();
+  lbRenderScannedList();
+  lbUpdateCounts();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Labor board
+  document.getElementById('tabbtn-labor')?.addEventListener('click', () => {
+    lbRenderBoard();
+    lbRenderScannedList();
+    lbUpdateCounts();
+  });
+  lbRenderBoard();
+  lbUpdateCounts();
+
+  // Planner + import tabs
+  const plannerBtn = document.getElementById('tabbtn-planner');
+  const importBtn  = document.getElementById('tabbtn-import');
+  [plannerBtn, importBtn].forEach(btn => {
+    if (btn && !btn._registered) {
+      btn._registered = true;
+      btn.addEventListener('click', () => {
+        if (btn.id === 'tabbtn-planner') renderPlannerCalc();
+      });
+    }
+  });
+  renderWIPGrid();
+  updateProfileRunBtn();
+  updateHourlyRunBtn();
+});
 </script>
 </body>
 </html>
