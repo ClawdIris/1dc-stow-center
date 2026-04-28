@@ -1022,6 +1022,7 @@ body.day-mode .priv-btn-active { color: #fff !important; }
   <button id="tabbtn-attainment" class="tab" data-tab="attainment" role="tab" aria-selected="false" aria-controls="tab-attainment">🎯 Attainment <span class="tab-status idle" id="ts-attainment"></span></button>
   <button id="tabbtn-handoff" class="tab" data-tab="handoff"    role="tab" aria-selected="false" aria-controls="tab-handoff">📋 Handoff <span class="tab-status idle" id="ts-handoff"></span></button>
   <button id="tabbtn-floor" class="tab" data-tab="floor" role="tab" aria-selected="false" aria-controls="tab-floor">📺 Floor Board</button>
+  <button id="tabbtn-lbview" class="tab" data-tab="lbview" role="tab" aria-selected="false" aria-controls="tab-lbview">📋 Board View</button>
   <button id="tabbtn-associates" class="tab" data-tab="associates" role="tab" aria-selected="false" aria-controls="tab-associates">👥 Associates <span class="tab-status idle" id="ts-associates"></span></button>
   <button id="tabbtn-helpme" class="tab" data-tab="helpme"     role="tab" aria-selected="false" aria-controls="tab-helpme">🆘 Help Me <span class="tbadge" id="hm-badge" style="display:none;">0</span></button>
   <button id="tabbtn-safety" class="tab" data-tab="safety"     role="tab" aria-selected="false" aria-controls="tab-safety">🛡️ Safety <span class="tab-status idle" id="ts-safety"></span></button>
@@ -1635,6 +1636,20 @@ body.day-mode .priv-btn-active { color: #fff !important; }
       </div>
     </div>
   </div>
+</div>
+
+<!-- ===== LABOR BOARD VIEW ===== -->
+<div id="tab-lbview" class="panel" role="tabpanel" aria-labelledby="tabbtn-lbview" tabindex="-1">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+      Read-only roster view · Matches Excel format · Updates live from Labor Board
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="lbvRender()">↻ Refresh</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨 Print</button>
+    </div>
+  </div>
+  <div id="lbv-container" style="overflow-x:auto;"></div>
 </div>
 
 <!-- ===== ASSOCIATES ===== -->
@@ -18110,7 +18125,405 @@ function restoreStowZones() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// COST MONITOR + SHIFT PHASE ADVISOR + NEW ARRIVALS + LEARNING
+// LABOR BOARD VIEW — Excel-style roster grid
+// ═══════════════════════════════════════════════════════════════
+
+function lbvRender() {
+  const container = document.getElementById('lbv-container');
+  if (!container) return;
+
+  // ── HELPERS ──────────────────────────────────────────────────
+  const assigned = lbAssignments || {};
+  const scanned  = lbScannedIn   || [];
+
+  // Get assigned person for a slot id
+  function person(slotId) {
+    const a = assigned[slotId];
+    return a ? a.name : '';
+  }
+
+  // Count assigned people by role across all assignments
+  const roleCounts = {};
+  Object.values(assigned).forEach(a => {
+    roleCounts[a.role] = (roleCounts[a.role] || 0) + 1;
+  });
+  const rc = role => roleCounts[role] || 0;
+
+  // Total on clock
+  const totalScanned = scanned.length;
+  const totalAssigned = new Set(Object.values(assigned).map(a => a.empId)).size;
+  const ftCount = scanned.filter(a => !a.isPartTime).length;
+  const ptCount = scanned.filter(a => a.isPartTime).length;
+
+  // ── STYLE ────────────────────────────────────────────────────
+  const S = {
+    table:   'border-collapse:collapse;font-family:Arial,sans-serif;font-size:11px;width:100%;min-width:900px;',
+    hdr:     'background:#1A1F2E;color:#FF9F1C;font-weight:700;font-size:10px;padding:5px 6px;border:1px solid #2A3045;text-align:center;letter-spacing:0.05em;',
+    secHdr:  'background:#2A3045;color:#FF9F1C;font-weight:700;font-size:10px;padding:5px 6px;border:1px solid #2A3045;text-align:left;',
+    roleCell:'background:#0F1420;color:#6B7280;font-size:10px;padding:4px 6px;border:1px solid #2A3045;white-space:nowrap;',
+    nameCell:'background:#07090C;color:#E8EAF0;font-size:11px;padding:4px 8px;border:1px solid #2A3045;min-width:120px;',
+    badgeCell:'background:#07090C;color:#6B7280;font-size:10px;padding:4px 6px;border:1px solid #2A3045;font-family:monospace;',
+    emptyCell:'background:#07090C;color:#2A3045;font-size:10px;padding:4px 6px;border:1px solid #2A3045;',
+    countBadge: (n) => `<span style="background:${n>0?'rgba(255,159,28,0.2)':'rgba(42,48,69,0.5)'};border:1px solid ${n>0?'#FF9F1C':'#2A3045'};color:${n>0?'#FF9F1C':'#6B7280'};font-size:9px;padding:1px 5px;margin-left:6px;font-family:monospace;">${n}</span>`,
+    totRow:  'background:#1A1F2E;color:#E8EAF0;font-weight:700;font-size:11px;padding:6px 8px;border:1px solid #2A3045;',
+  };
+
+  const e = (tag, style, content, extra='') =>
+    `<${tag} style="${style}" ${extra}>${content}</${tag}>`;
+
+  const nameCell  = name => e('td', name ? S.nameCell : S.emptyCell, name || '—');
+  const badgeCell = val  => e('td', S.badgeCell, val || '');
+  const roleCell  = role => e('td', S.roleCell, role);
+
+  // ── ZONE TEAMS ───────────────────────────────────────────────
+  const zones = [
+    { label:'ZONE 4 (158-163)', id:'D1', bufs:'158·159·160', color:'#fde047' },
+    { label:'ZONE 3 (151-156)', id:'C1', bufs:'151·152·153', color:'#FF9F1C' },
+    { label:'ZONE 2 (145-149)', id:'B1', bufs:'145·146·147', color:'#4A9EFF' },
+    { label:'ZONE 1 (137-143)', id:'A1', bufs:'137·138·139', color:'#00E5A0' },
+  ];
+
+  // Positions in each zone (matching Excel row order)
+  const zonePositions = [
+    { role:'Receiver',       rows:9  },
+    { role:'Downstacker',    rows:6  },
+    { role:'Pallet Auditor', rows:10 },
+    { role:'EPJ',            rows:10 },
+    { role:'Problem Solver', rows:5  },
+  ];
+
+  // Get slots for a team by role
+  function getZoneSlots(teamId, role) {
+    const slots = teamSlots ? teamSlots(teamId) : [];
+    return slots.filter(s => s.role === role);
+  }
+
+  // ── BUILD TABLE ──────────────────────────────────────────────
+  let html = `<table style="${S.table}">`;
+
+  // ── HEADER ROW ───────────────────────────────────────────────
+  html += `<thead><tr>`;
+  html += e('th', S.hdr, 'RECEIVE DOCK', 'colspan="3"');
+  html += e('th', S.hdr, 'PID', 'colspan="3"');
+  zones.forEach(z => {
+    const zColor = z.color;
+    html += `<th style="${S.hdr}border-bottom:2px solid ${zColor};" colspan="3">${z.label}</th>`;
+  });
+  html += `</tr>`;
+
+  // Sub-headers
+  html += `<tr>`;
+  // Dock
+  html += e('th', S.hdr, 'Door');
+  html += e('th', S.hdr, 'Badge');
+  html += e('th', S.hdr, 'Name');
+  // PID
+  html += e('th', S.hdr, 'Position');
+  html += e('th', S.hdr, 'Badge');
+  html += e('th', S.hdr, 'Name');
+  // Zones
+  zones.forEach(() => {
+    html += e('th', S.hdr, 'Position');
+    html += e('th', S.hdr, 'Badge');
+    html += e('th', S.hdr, 'Name');
+  });
+  html += `</tr></thead><tbody>`;
+
+  // ── FT UNLOAD SECTION ────────────────────────────────────────
+  const dockSlots = QZZ1_FLOOR?.dock?.slots || [];
+  const ftUnload  = dockSlots.filter(s => s.role === 'FT Unload');
+  const clampSlots= dockSlots.filter(s => s.role === 'Clamp');
+  const pidSlots  = QZZ1_FLOOR?.pid?.slots || [];
+
+  // Section header — FT Unload
+  html += `<tr>`;
+  html += e('td', S.secHdr, `FT UNLOAD ${S.countBadge(rc('FT Unload'))}`, 'colspan="3"');
+  html += e('td', S.secHdr, `PID ${S.countBadge(pidSlots.map(s=>rc(s.role)).reduce((a,b)=>a+b,0))}`, 'colspan="3"');
+  zones.forEach(z => {
+    html += e('td', S.secHdr, `RECEIVERS ${S.countBadge(rc('Receiver'))}`, 'colspan="3"');
+  });
+  html += `</tr>`;
+
+  // Row data — FT Unload + PID Truck Line Throw + Zone Receivers
+  const maxFTRows = Math.max(ftUnload.length, 2);
+  const pidThrow  = pidSlots.filter(s => s.role.includes('Throw'));
+  const maxRow1   = Math.max(maxFTRows, pidThrow.length, 9);
+
+  for (let i = 0; i < maxRow1; i++) {
+    html += '<tr>';
+    // Dock — FT Unload
+    const ftSlot = ftUnload[i];
+    if (i < ftUnload.length) {
+      const a = ftSlot ? assigned[ftSlot.id] : null;
+      html += e('td', S.badgeCell, a?.barcodeId || '');
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else {
+      html += e('td', S.emptyCell, ''); html += e('td', S.emptyCell, ''); html += e('td', S.emptyCell, '');
+    }
+    // PID
+    const pidSlot = pidThrow[i];
+    if (pidSlot) {
+      const a = assigned[pidSlot.id];
+      html += roleCell(pidSlot.role);
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else {
+      html += e('td', S.emptyCell, '','colspan="3"');
+    }
+    // Zones — Receivers (rows 0-8)
+    zones.forEach(z => {
+      const teamId = z.id;
+      const slots  = getZoneSlots(teamId, 'Receiver');
+      const slot   = slots[i];
+      if (slot) {
+        const a = assigned[slot.id];
+        html += roleCell('Receiver');
+        html += badgeCell(a?.barcodeId || '');
+        html += nameCell(a?.name || '');
+      } else {
+        html += e('td', S.emptyCell, '', 'colspan="3"');
+      }
+    });
+    html += '</tr>';
+  }
+
+  // ── CLAMP UNLOAD + DOWNSTACKERS ──────────────────────────────
+  html += `<tr>`;
+  html += e('td', S.secHdr, `CLAMP UNLOAD ${S.countBadge(rc('Clamp'))}`, 'colspan="3"');
+  html += e('td', S.secHdr, '', 'colspan="3"');
+  zones.forEach(() => html += e('td', S.secHdr, `DOWNSTACKERS ${S.countBadge(rc('Downstacker'))}`, 'colspan="3"'));
+  html += `</tr>`;
+
+  const maxClampRows = Math.max(clampSlots.length, 6);
+  for (let i = 0; i < maxClampRows; i++) {
+    html += '<tr>';
+    const clampSlot = clampSlots[i];
+    if (clampSlot) {
+      const a = assigned[clampSlot.id];
+      html += e('td', S.badgeCell, '');
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else {
+      html += e('td', S.emptyCell, ''); html += e('td', S.emptyCell, ''); html += e('td', S.emptyCell, '');
+    }
+    // PID — Eaches / other
+    const pidOther = pidSlots.filter(s => !s.role.includes('Throw') && !s.role.includes('Gatekeeper') && !s.role.includes('Waterspider') && !s.role.includes('Pusher'));
+    const pidSlot2 = pidOther[i];
+    if (pidSlot2) {
+      const a = assigned[pidSlot2.id];
+      html += roleCell(pidSlot2.role);
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else {
+      html += e('td', S.emptyCell, '', 'colspan="3"');
+    }
+    // Zones — Downstackers
+    zones.forEach(z => {
+      const slots = getZoneSlots(z.id, 'Downstacker');
+      const slot  = slots[i];
+      if (slot) {
+        const a = assigned[slot.id];
+        html += roleCell('Downstacker');
+        html += badgeCell(a?.barcodeId || '');
+        html += nameCell(a?.name || '');
+      } else {
+        html += e('td', S.emptyCell, '', 'colspan="3"');
+      }
+    });
+    html += '</tr>';
+  }
+
+  // ── PALLET AUDITORS ──────────────────────────────────────────
+  html += `<tr>`;
+  html += e('td', S.secHdr, `TDR ${S.countBadge(rc('TDR'))}`, 'colspan="3"');
+  html += e('td', S.secHdr, '', 'colspan="3"');
+  zones.forEach(() => html += e('td', S.secHdr, `PALLET AUDITORS ${S.countBadge(rc('Pallet Auditor'))}`, 'colspan="3"'));
+  html += `</tr>`;
+
+  const tdrSlots = dockSlots.filter(s => s.role === 'TDR');
+  for (let i = 0; i < 10; i++) {
+    html += '<tr>';
+    const tdrSlot = tdrSlots[i];
+    if (tdrSlot) {
+      const a = assigned[tdrSlot.id];
+      html += e('td', S.badgeCell, '');
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else if (i === 0) {
+      const scEl = dockSlots.find(s => s.role === 'ShipClerk');
+      const a = scEl ? assigned[scEl.id] : null;
+      html += e('td', S.roleCell, 'ShipClerk');
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else {
+      html += e('td', S.emptyCell, ''); html += e('td', S.emptyCell, ''); html += e('td', S.emptyCell, '');
+    }
+    // PID remaining
+    const pidRemain = pidSlots.filter(s => s.role.includes('Gatekeeper') || s.role.includes('Waterspider') || s.role.includes('Pusher') || s.role.includes('IDRT'));
+    const pSlot = pidRemain[i];
+    if (pSlot) {
+      const a = assigned[pSlot.id];
+      html += roleCell(pSlot.role);
+      html += badgeCell(a?.barcodeId || '');
+      html += nameCell(a?.name || '');
+    } else {
+      html += e('td', S.emptyCell, '', 'colspan="3"');
+    }
+    zones.forEach(z => {
+      const slots = getZoneSlots(z.id, 'Pallet Auditor');
+      const slot  = slots[i];
+      if (slot) {
+        const a = assigned[slot.id];
+        html += roleCell('Pallet Auditor');
+        html += badgeCell(a?.barcodeId || '');
+        html += nameCell(a?.name || '');
+      } else {
+        html += e('td', S.emptyCell, '', 'colspan="3"');
+      }
+    });
+    html += '</tr>';
+  }
+
+  // ── EPJ ──────────────────────────────────────────────────────
+  html += `<tr>`;
+  html += e('td', S.secHdr, '', 'colspan="6"');
+  zones.forEach(() => html += e('td', S.secHdr, `EPJ ${S.countBadge(rc('EPJ'))}`, 'colspan="3"'));
+  html += `</tr>`;
+
+  for (let i = 0; i < 10; i++) {
+    html += '<tr>';
+    html += e('td', S.emptyCell, '', 'colspan="6"');
+    zones.forEach(z => {
+      const slots = getZoneSlots(z.id, 'EPJ');
+      const slot  = slots[i];
+      if (slot) {
+        const a = assigned[slot.id];
+        html += roleCell('EPJ');
+        html += badgeCell(a?.barcodeId || '');
+        html += nameCell(a?.name || '');
+      } else {
+        html += e('td', S.emptyCell, '', 'colspan="3"');
+      }
+    });
+    html += '</tr>';
+  }
+
+  // ── PROBLEM SOLVERS ──────────────────────────────────────────
+  html += `<tr>`;
+  html += e('td', S.secHdr, '', 'colspan="6"');
+  zones.forEach(() => html += e('td', S.secHdr, `PROBLEM SOLVERS ${S.countBadge(rc('Problem Solver'))}`, 'colspan="3"'));
+  html += `</tr>`;
+
+  for (let i = 0; i < 5; i++) {
+    html += '<tr>';
+    html += e('td', S.emptyCell, '', 'colspan="6"');
+    zones.forEach(z => {
+      const slots = getZoneSlots(z.id, 'Problem Solver');
+      const slot  = slots[i];
+      if (slot) {
+        const a = assigned[slot.id];
+        html += roleCell('Problem Solver');
+        html += badgeCell(a?.barcodeId || '');
+        html += nameCell(a?.name || '');
+      } else {
+        html += e('td', S.emptyCell, '', 'colspan="3"');
+      }
+    });
+    html += '</tr>';
+  }
+
+  // ── PS ZONE ──────────────────────────────────────────────────
+  const psSlots = QZZ1_FLOOR?.psZone?.slots || [];
+  const psCount = psSlots.reduce((s,sl) => s + (assigned[sl.id] ? 1 : 0), 0);
+  html += `<tr><td style="${S.secHdr}" colspan="${6 + zones.length*3}">PS ZONE (Buf 161-163) ${S.countBadge(psCount)}</td></tr>`;
+  html += `<tr>`;
+  html += e('td', S.emptyCell, '', `colspan="6"`);
+  psSlots.forEach(sl => {
+    const a = assigned[sl.id];
+    html += roleCell(sl.role);
+    html += badgeCell(a?.barcodeId || '');
+    html += nameCell(a?.name || '');
+  });
+  html += `</tr>`;
+
+  // ── LEADERSHIP / PROCESS ASSISTANTS ──────────────────────────
+  html += `<tr><td style="${S.secHdr}" colspan="${6 + zones.length*3}">PROCESS ASSISTANTS &amp; PROCESS GUIDES</td></tr>`;
+  html += `<tr>`;
+  html += e('td', S.secHdr, 'Zone', 'colspan="2"');
+  html += e('td', S.secHdr, 'Name');
+  html += e('td', S.secHdr, 'Zone', 'colspan="2"');
+  html += e('td', S.secHdr, 'Name');
+  html += e('td', S.secHdr, 'Learning Badge', 'colspan="3"');
+  html += e('td', S.secHdr, 'Name', `colspan="${zones.length*3 - 3}"`);
+  html += `</tr>`;
+  // PA/PG rows (3 rows)
+  for (let i = 0; i < 3; i++) {
+    html += `<tr>`;
+    html += e('td', S.roleCell, 'PA', 'colspan="2"'); html += e('td', S.nameCell, '');
+    html += e('td', S.roleCell, 'PG', 'colspan="2"'); html += e('td', S.nameCell, '');
+    html += e('td', S.emptyCell, '', `colspan="${zones.length*3 + 0}"`);
+    html += `</tr>`;
+  }
+
+  // ── HEADCOUNT TOTALS ─────────────────────────────────────────
+  const totalCols = 6 + zones.length * 3;
+  html += `<tr><td style="${S.secHdr}" colspan="${totalCols}">HEADCOUNT TOTALS</td></tr>`;
+
+  // Left side counts
+  const leftCounts = [
+    ['Truck Throwers', rc('FT Unload') + rc('Clamp')],
+    ['Side Throwers',  rc('TDR')],
+    ['Each-Receivers', rc('Eaches')],
+    ['Waterspiders',   rc('Waterspider')],
+    ['IDRT',           rc('IDRT')],
+    ['Damages',        0],
+    ['Hazmat/Tickets', 0],
+  ];
+  const rightCounts = [
+    ['Receivers',       rc('Receiver')],
+    ['Downstackers',    rc('Downstacker')],
+    ['Pallet Auditors', rc('Pallet Auditor')],
+    ['EPJ',             rc('EPJ')],
+    ['TDR',             rc('TDR')],
+    ['FT/CLAMP',        rc('FT/Clamp') + rc('FT Unload') + rc('Clamp')],
+    ['Problem Solvers', rc('Problem Solver')],
+    ['PA/ShipClerk',    rc('ShipClerk') + rc('Gatekeeper')],
+  ];
+
+  const maxHCRows = Math.max(leftCounts.length, rightCounts.length);
+  for (let i = 0; i < maxHCRows; i++) {
+    html += `<tr>`;
+    const l = leftCounts[i];
+    const r = rightCounts[i];
+    html += e('td', S.roleCell, l ? l[0] : '', 'colspan="2"');
+    html += e('td', S.totRow,   l ? `<strong>${l[1]}</strong>` : '');
+    html += e('td', S.roleCell, r ? r[0] : '', 'colspan="2"');
+    html += e('td', S.totRow,   r ? `<strong>${r[1]}</strong>` : '');
+    html += e('td', S.emptyCell, '', `colspan="${zones.length * 3}`);
+    html += `</tr>`;
+  }
+
+  // Grand totals row
+  const totalIBDock    = totalAssigned;
+  const totalLaborShare = scanned.filter(a => a.isLaborShare).length;
+  html += `<tr>`;
+  html += e('td', `${S.totRow}background:#FF9F1C;color:#07090C;`, `TOTAL IB DOCK HEADCOUNT: ${totalIBDock}`, `colspan="3"`);
+  html += e('td', S.totRow, `FT: ${ftCount}`, 'colspan="2"');
+  html += e('td', S.totRow, `PT: ${ptCount}`);
+  html += e('td', `${S.totRow}background:#2A3045;`, `LABOR SHARE: ${totalLaborShare}`, `colspan="${zones.length * 3}"`);
+  html += `</tr>`;
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+// Trigger render when tab is clicked
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('tabbtn-lbview')?.addEventListener('click', () => {
+    lbvRender();
+  });
+});
 // ═══════════════════════════════════════════════════════════════
 
 // ── NON-SCANNER ROLES (time codes as non-inventory) ─────────────
